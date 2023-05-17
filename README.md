@@ -1,2 +1,2 @@
-# SPM
-Service Process Manager (Cubic+)
+# CPM
+Cubic Package Manager (Cubic+)

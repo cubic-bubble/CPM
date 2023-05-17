@@ -1,600 +1,488 @@
 
-import type {
-  Options,
-  Process,
-  Metadata,
-  AssetsManifest,
-  MimeSupport,
-  CPROptions
-} from './types'
-import { EventEmitter } from 'events'
-import CacheStorage from 'all-localstorage'
-import { Client } from '@cubic-bubble/lps'
+import type { Metadata } from './types'
+import path from 'path'
+import fs from 'fs-inter'
+import request from 'request'
+import prequest from 'request-promise'
+import rs from './lib/RunScript'
+import CUP from './CUP'
 
 /**
- * Check metadata schema
+ * Parse package reference string in to
+ * construction object.
+ *
+ * @param {Function} reference  - Eg. plugin:namespace.name~version
  *
  */
+function parsePackageReference( reference ){
+
+  const sequence = reference.match(/(\w+):([a-zA-Z0-9_\-+]+).([a-zA-Z0-9_\-+]+)(~(([0-9]\.?){2,3}))?/)
+  if( !sequence || sequence.length < 4 )
+    return
+
+  const [ _, type, namespace, name, __, version ] = sequence
+  return { type, namespace, name, version }
+}
+
 function isValidMetadata( metadata: Metadata ){
-  return !!metadata.nsi
-          && !!metadata.name
-          && !!metadata.namespace
+  return !!metadata.type
+          || !!metadata.nsi
+          || !!metadata.name
+          || !!metadata.namespace
 }
 
-/**
- * Check process data schema
- *
- */
-function isValidProcess( process: Process ){
-  return !!process.metadata
-}
+export default class PackageManager extends CUP {
 
-function isEmpty( entry: any ){
-  // Test empty array or object
-  if (typeof entry !== 'object') return false
+  /**
+   * Intanciate PackageManager Object
+   *
+   * @param {Object} options       - Initial configuration options
+   *
+   */
+  constructor( options = {} ){
+    super( options )
 
-  return Array.isArray(entry) ?
-                    !entry.length
-                    : Object.keys(entry).length === 0 && entry.constructor === Object
-}
+    this.manager = options.manager || 'cpm' // Yarn as default node package manager (npm): (Install in packages)
+    this.cwd = options.cwd
+    this.cpr = options.cpr
+    this.authToken = options.authToken
+    this.debugMode = options.debug
 
-class CPRConnect {
-  public hostname?: string
-  public version = 1
-  private accessToken?: string
-  private anchorToken?: string
-  private baseURL: string
-  private scope: string[]
-  private manifest?: AssetsManifest
-
-  constructor( options: CPROptions ){
-    if( options.version ) this.version = options.version
-    if( options.hostname ) this.hostname = options.hostname
-    if( options.accessToken ) this.accessToken = options.accessToken
-    if( options.anchorToken ) this.anchorToken = options.anchorToken
-
-    this.scope = []
-    this.manifest = {}
-    this.baseURL = `${this.hostname}/v${this.version}`
+    // Mute watcher function by default
+    this.watcher = typeof options.watcher == 'function' ? options.watcher : function(){}
+    // Script runner options
+    this.rsOptions = { cwd: this.cwd, stdio: 'pipe', shell: true }
   }
 
-  async connect(): Promise<boolean>{
+  /**
+   * Generate initial `package.json` and `.metadata`
+   *  requirement files at project root.
+   *
+   * @param {Object} configs    - Custom configurations
+   *
+   */
+  async init( configs ){
+    // Default is CPM config file.
+    let filepath = `${this.cwd }/.metadata`
+
+    // Generate 3rd party CLI package managers (npm, yarn) package.json
+    if( ['npm', 'yarn'].includes( this.manager ) )
+      filepath = `${this.cwd }/package.json`
+
+    // Check & Fetch existing .metadata or package.json content
     try {
-      const
-      options = {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      },
-      url = `${this.baseURL}/pipe?atoken=${this.anchorToken}`,
-      { error, message, scope, manifest } = await ( await window.fetch( url, options ) ).json()
-      if( error ) {
-        console.error( message )
-        return false
-      }
+      const existing = await fs.readJson( filepath )
 
-      this.scope = scope
-      this.manifest = manifest
-
-      this.manifest?.js?.length
-      && await Promise.all( this.manifest.js.map( src => {
-        return new Promise( ( resolve, reject ) => {
-          const script = document.createElement('script')
-
-          script.type = 'module'
-          script.src = src
-          script.defer = true
-          script.onload = resolve
-          script.onerror = reject
-
-          document.querySelector('body')?.appendChild( script )
-        } )
-      } ) )
-
-      this.manifest?.css?.length
-      && await Promise.all( this.manifest.css.map( href => {
-        return new Promise( ( resolve, reject ) => {
-          const link = document.createElement('link')
-
-          link.rel = 'type/css'
-          link.href = href
-          link.onload = resolve
-          link.onerror = reject
-
-          document.querySelector('head')?.appendChild( link )
-        } )
-      } ) )
-
-      return true
+      /**
+       * Merge new information with exising
+       *  .metadata or package.json content.
+       */
+      if( typeof existing == 'object' )
+        configs = { ...existing, ...configs }
     }
-    catch( error ) {
-      console.log('Failed connecting to repository. Check your credentials or your internet: ', error )
-      return false
-    }
-  }
-}
+    catch( error ) { console.log('Init Error: ', error ) }
 
-const emiter = new EventEmitter
-class EventHanlder extends EventEmitter {
-  // Public on = emiter.on
-  public emit = emiter.emit
-  constructor(){
-    super()
-  }
-}
-
-export default class SPM extends EventHanlder {
-  private UAT: string
-  private LPS
-  private CPR: CPRConnect
-
-  // In-browser environment cache
-  private cache: typeof CacheStorage
-  private cacheName: string
-
-  private __PROCESS_THREADS: { [index: string]: Process }
-  private __ACTIVE_APPLICATIONS: { [index: string]: string }
-  private __FLASH_APPLICATIONS: { [index: string]: string }
-  private __MIMETYPE_SUPPORT: { [index: string]: MimeSupport[] }
-
-  /**
-   * Initialize process manager state
-   * variables, cache, fetch & load installed
-   * packages.
-   *
-   * @param {Object} options
-   *    - CPR   Access configuration to Cubic Package
-   *            Repository: { server, version, anchorToken }
-   *    - LPS   Locale Package Store client
-   *    - UAT   User Account Type
-   */
-  constructor( options: Options ){
-    super()
-
-    if( !options.CPR ) throw new Error('Undefined <CPR> configuration')
-    if( !options.UAT ) throw new Error('Undefined <UAT> configuration')
-
-    this.UAT = options.UAT
-    // Local Package Storage
-    this.LPS = new Client( options.LPS )
-    // Connect to provided package repository
-    this.CPR = new CPRConnect( options.CPR )
-    // In-browser environment cache
-    this.cache = new CacheStorage({ prefix: 'cpm-cache', encrypt: true })
-    this.cacheName = `${this.UAT.toLowerCase()}-process`
-
-    this.__PROCESS_THREADS = this.cache.get( this.cacheName ) || {}
-    this.__ACTIVE_APPLICATIONS = {}
-    this.__FLASH_APPLICATIONS = this.cache.get(`${this.cacheName }-temp`) || {}
-    this.__MIMETYPE_SUPPORT = {}
+    // Generate a new package.json file
+    await fs.outputJSON( filepath, configs, { spaces: '\t' } )
   }
 
-
   /**
-   * Fetch and register all installed packages
-   * to process threads list
-   */
-  async load(): Promise<void>{
-    const list = await this.LPS.fetch()
-
-    Array.isArray( list )
-    && await Promise.all( list.map( metadata => {
-      const process: Process = {
-        loaded: false,
-        status: 'LATENT',
-        metadata,
-        argv: {},
-        stats: {}
-      }
-
-      this.register.bind(this)( process )
-    } ) )
-
-    // Close all temporary loaded apps
-    Object.keys( this.__FLASH_APPLICATIONS ).map( this.quit.bind(this) )
-    // Connect to package repository
-    await this.CPR.connect()
-
-    this.emit('ready')
-  }
-
-
-  /**
-   * Return all existing process threads
-   * state details
-   */
-  threads(){ return Object.values( this.__PROCESS_THREADS ) }
-
-
-  /**
-   * Return all loaded process theads
-   * state details
-   */
-  loaded(){ return Object.values( this.__PROCESS_THREADS ).filter( ({ loaded }: any ) => { return loaded } ) }
-
-
-  /**
-   * Return a list of process theads
-   * state details by their current status
+   * `npm` or `yarn` CLI command runner
    *
-   * @param {String} status   Process status: `LATENT`, `ACTIVE`, `STALLED`
+   * @param {String} verb       - Package managemet action: install, remove, update, ...
+   * @param {String} packages   - Space separated list of NodeJS packages/libraries
+   * @param {String} params     - Check `npm` or `yarn` command parameters documentation
+   * @param {String} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  filter( status: string ){ return Object.values( this.__PROCESS_THREADS ).filter( ( each: any ) => { return each.status == status } ) }
+  shell( verb, packages, params, progress ){
+    return new Promise( ( resolve, reject ) => {
+      // Specified packages to uninstall
+      packages = Array.isArray( packages ) ? packages.join(' ') : packages || ''
 
-
-  /**
-   * Check whether a given process thread
-   * exists
-   *
-   * @param {String} sid   Store id of installed package
-   *
-   */
-  exists( sid: string ){ return !!this.__PROCESS_THREADS[ sid ] }
-
-
-  /**
-   * Check whether an application requires
-   * or have a missing permissions
-   *
-   * @param {Object} metadata
-   *
-   */
-  requirePermission({ resource }: Metadata ){
-    return resource?.permissions?.scope?.length
-            && resource.permissions.scope.filter( each => {
-              return typeof each == 'string'
-                      || ( typeof each == 'object' && each.type && !each.access )
-            } ).length
-  }
-
-
-  /**
-   * Make an external request to get
-   * authorization for mandatory permissions
-   *
-   * @param {String} type        Type of permission: `scope`, `feat`, `context`, ...
-   * @param {Object} requestor   Metadata of package requesting permissions
-   * @param {Array} list        List of mandatory permissions
-   *
-   */
-  askPermission( type: string, requestor: Metadata, list: string[] ){
-    return new Promise( resolve => {
-      this.emit('permission-request', { type, requestor, list }, resolve )
+      rs(`${this.manager} ${verb} ${packages} ${params}`, this.rsOptions, progress )
+        .then( resolve )
+        .catch( reject )
     } )
   }
 
-
   /**
-   * Generate public access URL of a favicon
-   * asset deployed on a CPR
+   * Install dependency package requirements listed
+   *  in `.metadata` or `package.json` files
    *
-   * @param {Object} metadata
+   * Use `npm` or `yarn` for NodeJS packages & `cpm`
+   * for Cubic Package
+   *
+   * @param {String} params       - Custom process options
+   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d]      Is dependency package installation
+   *                                [-v]      Verbose logs
+   *                                [--force] Override directory of existing installations of same packages
+   * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  favicon( metadata: Metadata ){
-    if( !isValidMetadata( metadata ) ) return ''
+  async installDependencies( params = '', progress ){
 
-    const { namespace, nsi, version, favicon } = metadata
-    return `${this.CPR.hostname}/${namespace}/${nsi}~${version}/${favicon}`
+    if( typeof params == 'function' ) {
+      progress = params
+      params = ''
+    }
+
+    progress = progress || this.watcher
+
+    // Handle by 3rd party CLI package managers like: npm
+    if( ['npm', 'yarn'].includes( this.manager ) )
+      return await this.shell( 'install', null, params, progress )
+
   }
 
-
   /**
-   * Register new process thread
+   * Install one or a list of packages
    *
-   * @param {Object} process
+   * Use `npm` or `yarn` for NodeJS packages & `cpm`
+   * for Cubic Package
    *
-   * NOTE: Requires & await for mandatory
-   *       permissions to complete the registration
-   */
-  async register( process: Process ): Promise<boolean>{
-
-    if( !isValidProcess( process ) ) return false
-
-    const { sid, type, name, runscript, resource } = process.metadata
-    if( !sid ) return false
-
-    if( this.__ACTIVE_APPLICATIONS[ name ] ) {
-      // Throw process already exist alert
-      this.emit('alert', 'PROCESS_EXIST', process.metadata )
-      return false
-    }
-
-    /**
-     * Send out mandatory permission request
-     *
-     * IMPORTANT: Wait for feedback to continue the
-     * registration.
-     */
-    if( resource?.permissions && this.requirePermission( process.metadata ) ) {
-      const list = await this.askPermission( 'scope', process.metadata, resource?.permissions?.scope as string[] )
-
-      if( Array.isArray( list ) ) {
-        resource.permissions.scope = list
-        await this.LPS.update( sid, { resource })
-      }
-    }
-
-    this.__PROCESS_THREADS[ sid ] = process
-
-    // Maintain a dedicated list of applications process ids: Auto-loadable or not
-    if( type == 'application' ) {
-      this.__ACTIVE_APPLICATIONS[ name ] = sid
-
-      if( resource && resource.services && !isEmpty( resource.services ) ) {
-        // Application that can `EDIT` file or data
-        Array.isArray( resource.services.editor )
-        && resource.services.editor.map( mime => {
-          if( !this.__MIMETYPE_SUPPORT[ mime ] ) this.__MIMETYPE_SUPPORT[ mime ] = []
-          this.__MIMETYPE_SUPPORT[ mime ].push({ sid, name, type: 'editor' })
-        })
-
-        // Application that can `READ` file or data
-        Array.isArray( resource.services.reader )
-        && resource.services.reader.map( mime => {
-          if( !this.__MIMETYPE_SUPPORT[ mime ] ) this.__MIMETYPE_SUPPORT[ mime ] = []
-          this.__MIMETYPE_SUPPORT[ mime ].push({ sid, name, type: 'reader' })
-        })
-      }
-    }
-
-    /**
-     * Register globally all auto-loadable processes
-     * define by "runscript" configurations.
-     */
-    if( runscript
-        && ( ( runscript[ this.UAT ] && runscript[ this.UAT ].autoload ) // Specific account
-              || ( runscript['*'] && runscript['*'].autoload ) ) ) { // All account
-      this.__PROCESS_THREADS[ sid ].loaded = true
-      this.emit('refresh', { loaded: this.loaded(), actives: this.filter('ACTIVE') })
-    }
-
-    return true
-  }
-
-
-  /**
-   * Unregister a process
-   *
-   * @param {String} sid   Store id of installed package
-   *                       Use as process ID as well
+   * @param {String} packages     - Space separated list of package references
+   *                                Eg. `application:namespace.name~version plugin:...`
+   * @param {String} params       - Custom process options
+   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d]      Is dependency package installation
+   *                                [-v]      Verbose logs
+   *                                [--force] Override directory of existing installations of same packages
+   * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  unregister( sid: string ){
-    if( !this.__PROCESS_THREADS[ sid ] ) return
+  async install( packages, params = '', progress ){
 
-    const { loaded, metadata } = this.__PROCESS_THREADS[ sid ]
-    delete this.__PROCESS_THREADS[ sid ]
-
-    // Close auto-loaded application if running
-    if( !loaded || !this.quit( metadata.name ) ) return
-    delete this.__ACTIVE_APPLICATIONS[ metadata.name ]
-
-    this.emit('refresh', { loaded: this.loaded(), actives: this.filter('ACTIVE') })
-  }
-
-
-  /**
-   * Return a given process metadata
-   *
-   * @param {String} query   Match metadata `sid`, `name` or `nsi`
-   *
-   */
-  metadata( query: string ): Metadata | null{
-    // Retreive a given process metadata by sid or name or nsi
-    for( const sid in this.__PROCESS_THREADS ) {
-      const { metadata } = this.__PROCESS_THREADS[ sid ]
-
-      if( query == sid
-          || metadata.nsi == query
-          || metadata.name == query )
-        return { ...metadata, favicon: this.favicon( metadata ) }
+    if( typeof params == 'function' ) {
+      progress = params
+      params = ''
     }
 
-    // Workspace alert message
-    this.emit('alert', 'PROCESS_NOT_FOUND', query )
-    return null
-  }
+    progress = progress || this.watcher
 
-
-  /**
-   * Unregister a process
-   *
-   * @param {String} type   Opening data or file MIME type
-   * @param {Object} argv   Input argument variables to run the process
-   *
-   */
-  open( type: string, argv = {} ): boolean{
-
-    if( !Array.isArray( this.__MIMETYPE_SUPPORT[ type ] ) ) {
-      console.log('[EXT]: No process to read this datatype found')
-      return false
-    }
-
-    for( let o = 0; o < this.__MIMETYPE_SUPPORT[ type ].length; o++ )
-      if( this.__MIMETYPE_SUPPORT[ type ][ o ].defaultHandler ) {
-        this.run( this.__MIMETYPE_SUPPORT[ type ][ o ].name, argv )
-        return true
+    // Handle by 3rd party CLI package managers like: npm
+    if( ['npm', 'yarn'].includes( this.manager ) ) {
+      let verb
+      switch( this.manager ) {
+        case 'npm': verb = 'install'; break
+        case 'yarn': // Yarn is use by default
+        default: verb = 'add'
       }
 
-    // Select first handler by default
-    this.run( this.__MIMETYPE_SUPPORT[ type ][0].name, argv )
-    return true
-  }
+      return await this.shell( verb, packages, params, progress )
+    }
 
-
-  /**
-   * Spawn a new process
-   *
-   * @param {String} sid    User installed package store ID as process ID
-   * @param {Object} argv   Input argument variables to run the process
-   *
-   */
-  spawn( sid: string, argv = {} ): void{
-
-    if( !this.__PROCESS_THREADS[ sid ] )
-      throw new Error(`Process <${sid}> not found`)
+    // Check whether a package repository is defined
+    if( !this.cpr )
+      throw new Error('Undefined Cubic Package Repository')
 
     const
-    ActiveProcesses = this.filter('ACTIVE'),
-    hightIndex = ActiveProcesses.length > 1 ?
-                    Math.max( ...( ActiveProcesses.map( ({ index }: any ) => { return index } ) ) as number[] )
-                    : ActiveProcesses.length
+    _this = this,
+    plist = packages.split(/\s+/),
+    fetchPackage = ( { type, namespace, name }, { metadata, dtoken, etoken }, isDep ) => {
+      return new Promise( ( resolve, reject ) => {
+        /**
+         * Define installation directory
+         *
+         * NOTE: Packages are extracted
+         *   - Directly into `cwd` by namespace folder (Main package)
+         *   - Or into respective dependency type folders (Dependency package: by `isDep` flag)
+         */
+        const
+        directory = `${_this.cwd}/${isDep ? `.${type}/` : ''}${namespace}/${name}~${metadata.version}`,
+        downloadAndUnpack = async () => {
+          progress( false, null, `Installation directory: ${directory}`)
 
-    // Clear notification badge event
-    this.emit('notification-clear', sid )
+          await fs.ensureDir( directory )
+          return await this.unpack(`${_this.cpr}/package/fetch?dtoken=${dtoken}`, directory, etoken, progress )
+        }
 
-    // Default workspace view mode
-    let WSMode = ''
+        /**
+         * Do not override existing installation directory
+         * unless --force flag is set in params
+         */
+        if( params.includes('--force') )
+          return downloadAndUnpack().then( resolve ).catch( reject )
 
-    // Activate a new process
-    if( this.__PROCESS_THREADS[ sid ].status !== 'ACTIVE' ) {
-      this.__PROCESS_THREADS[ sid ] = { ...this.__PROCESS_THREADS[ sid ], status: 'ACTIVE', argv }
+        // Check directory and append package files
+        fs
+        .pathExists( directory )
+        .then( yes => {
+          if( yes ) {
+            progress( false, null, `Package is already installed. ${directory}\n\tUse --force option to override existing installation.`)
+            resolve()
+          }
+          else downloadAndUnpack().then( resolve ).catch( reject )
+        } )
+        .catch( reject )
+      } )
+    },
+    installDependencies = async metadata => {
+      // Check and load an application/plugin dependencies
+      const
+      depRegex = /^(plugin|library):(.+)$/,
+      deps = metadata.resource
+              && metadata.resource.dependencies
+              && metadata.resource.dependencies.length
+              && metadata.resource.dependencies.filter( each => { return depRegex.test( each ) } )
 
-      // Process has a default workspace view mode
-      const { runscript } = this.__PROCESS_THREADS[ sid ].metadata
-      WSMode = ( runscript
-                  && ( runscript?.workspace
-                      || runscript[ this.UAT ]?.workspace
-                      || runscript['*']?.workspace ) ) as string
-    }
-    // No re-indexing required when 0 or only 1 process thread is active
-    else if( hightIndex <= 1 ) {
-      // Update the `argv` of this active process
-      if( argv ) {
-        this.__PROCESS_THREADS[ sid ].argv = argv
+      if( !Array.isArray( deps ) || !deps.length ) return metadata
 
-        this.cache.set( this.cacheName, this.__PROCESS_THREADS )
-        this.emit( 'refresh', { loaded: this.loaded(), actives: this.filter('ACTIVE') })
+      for( const x in deps ) {
+        const [ _, depType ] = deps[x].match( depRegex ) || []
+
+        const response = await eachPackage( deps[x], depType )
+        if( !response ) throw new Error(`<${deps[x]}> not found`)
+
+        const category = depType === 'plugin' ? 'plugins' : 'libraries' // Plugins or libraries
+
+        if( !metadata[ category ] ) metadata[ category ] = {}
+        metadata[ category ][ response.metadata.nsi ] = response.metadata
       }
 
-      return
+      return metadata
+    },
+    eachPackage = async ( pkg, isDep = false ) => {
+      const refs = parsePackageReference( pkg )
+      if( !refs )
+        throw new Error(`Invalid <${pkg}> package reference`)
+
+      progress( false, null, `Resolving ${pkg}`)
+      const response = await prequest.get({ url: `${_this.cpr}/resolve/${pkg}`, json: true })
+      if( response.error ) throw new Error( response.message )
+
+      // Fetch packages
+      params.includes('-f')
+      && await fetchPackage( refs, response, isDep )
+
+      /**
+       * Install all required dependencies (plugin/library)
+       *
+       * NOTE: Regular mode only. Plugin are directly added to
+       *       `.metadata` file in sandbox mode.
+       */
+      response.metadata = await installDependencies( response.metadata )
+
+      // Install next package if there is. Otherwise resolve
+      return plist.length ? await eachPackage( plist.shift() ) : response
     }
 
-    this.__PROCESS_THREADS[ sid ].index = hightIndex + 1 // Position targeted view block to the top
-
-    this.cache.set( this.cacheName, this.__PROCESS_THREADS )
-    this.emit( 'refresh', { loaded: this.loaded(), actives: this.filter('ACTIVE') })
-
-    // Show Aside in default/auto mode
-    ;( !ActiveProcesses.length || WSMode ) && this.emit( 'ws-mode', { mode: WSMode || 'auto' } )
+    return await eachPackage( plist.shift(), params.includes('-d') )
   }
 
+  /**
+   * Remove/Uninstall one or a list of packages
+   *
+   * Use `npm` or `yarn` for NodeJS packages & `cpm`
+   * for Cubic Package
+   *
+   * @param {String} packages     - Space separated list of package references
+   *                                Eg. `application:namespace.name~version plugin:...`
+   * @param {String} params       - Custom process options
+   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d]      Is dependency package installation
+   *                                [-v]      Verbose logs
+   *                                [--force] Override directory of existing installations of same packages
+   * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
+   */
+  async remove( packages, params = '', progress ){
+
+    if( !packages )
+      throw new Error('Undefined package to uninstall')
+
+    if( typeof params == 'function' ) {
+      progress = params
+      params = ''
+    }
+
+    progress = progress || this.watcher
+
+    // Handle by 3rd party CLI package managers like: npm
+    if( ['npm', 'yarn'].includes( this.manager ) ) {
+      let verb
+      switch( this.manager ) {
+        case 'npm': verb = 'uninstall'; break
+        case 'yarn': // Yarn is use by default
+        default: verb = 'remove'
+      }
+
+      return await this.shell( verb, packages, params, progress )
+    }
+
+    // Remove package installed with cpm
+    const
+    _this = this,
+    plist = packages.split(/\s+/),
+    eachPackage = async pkg => {
+      const refs = parsePackageReference( pkg )
+      if( !refs ) throw new Error(`Invalid <${pkg}> package reference`)
+
+      const
+      { type, namespace, name, version } = refs,
+      nspDir = `${_this.cwd}/${type}s/${namespace}`
+
+      // Check whether installation namespace exists
+      if( !await fs.pathExists( nspDir ) )
+        throw new Error(`No installation of <${pkg}> found`)
+
+      /**
+       * Clear all different installed versions of this
+       * package, if no version specified
+       */
+      if( !version ) {
+        const dir = await fs.readdir( nspDir )
+        await Promise.all( dir.map( dirname => {
+          if( dirname.includes( name ) )
+            return fs.remove(`${nspDir}/${dirname}`)
+        } ) )
+      }
+      // Clear only specified version directory
+      else await fs.remove(`${nspDir}/${name}~${version}`)
+
+      // Install next package if there is. Otherwise resolve
+      return plist.length ? await eachPackage( plist.shift() ) : `<${packages.replace(/\s+/, ', ')}> removed`
+    }
+
+    return await eachPackage( plist.shift() )
+  }
 
   /**
-   * Refresh a running process in-memory
-   * metadata with LPS metadata
+   * Update one or a list of packages
    *
-   * @param {String} sid    Installed package store ID used as process ID
+   * Use `npm` or `yarn` for NodeJS packages & `cpm`
+   * for Cubic Package
+   *
+   * @param {String} packages     - Space separated list of package references
+   *                                Eg. `application:namespace.name~version plugin:...`
+   * @param {String} params       - Custom process options
+   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d]      Is dependency package installation
+   *                                [-v]      Verbose logs
+   *                                [--force] Override directory of existing installations of same packages
+   * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  async refresh( sid: string ): Promise<void>{
+  async update( packages, params = '', progress ){
+
+    if( !packages )
+      throw new Error('Undefined package to uninstall')
+
+    if( typeof params == 'function' ) {
+      progress = params
+      params = ''
+    }
+
+    progress = progress || this.watcher
+
+    // Handle by 3rd party CLI package managers like: npm
+    if( ['npm', 'yarn'].includes( this.manager ) ) {
+      let verb
+      switch( this.manager ) {
+        case 'npm': verb = 'update'; break
+        case 'yarn': // Yarn is use by default
+        default: verb = 'upgrade'
+                  params += ' --latest'
+      }
+
+      return await this.shell( verb, packages, params, progress )
+    }
+
+    // Update: Reinstall packages to their latest versions
+    packages = packages.split(/\s+/).map( each => { return each.replace(/~(([0-9]\.?){2,3})/, '') }).join(' ')
+
+    return await this.install( packages, params, progress )
+  }
+
+  /**
+   * Publish current working directory as package
+   *
+   * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
+   *
+   */
+  async publish( progress ){
+    // Check whether a package repository is defined
+    if( !this.cpr )
+      throw new Error('Undefined Cubic Package Repository')
+
+    // TODO: Preliminary checks of packagable configurations
+
+
+    progress = progress || this.watcher
+
+    let metadata
     try {
-      // Get latest version of its metadata
-      const metadata = await this.LPS.get({ sid })
-      if( !metadata ) throw new Error('Unexpected Error Occured')
-
-      // Replace process metadata
-      this.__PROCESS_THREADS[ sid ].metadata = metadata
-
-      // Re-run the process with current argv if active
-      this.__PROCESS_THREADS[ sid ].status == 'ACTIVE'
-      && this.spawn( sid, this.__PROCESS_THREADS[ sid ].argv )
-
-      this.emit( 'refresh', { loaded: this.loaded(), actives: this.filter('ACTIVE') })
+      progress( false, null, 'Checking metadata in .metadata')
+      metadata = await fs.readJson(`${this.cwd }/.metadata`)
     }
-    catch( error ) { console.log('Failed Refreshing Process: ', error ) }
-  }
+    catch( error ) {
+      const explicitError = new Error('Undefined Metadata. Expected .metadata file in project root')
 
-
-  /**
-   * Kill a running process
-   *
-   * @param {String} sid    Installed package store ID used as process ID
-   *
-   */
-  kill( sid: string ): boolean{
-    // Is not active
-    if( this.__PROCESS_THREADS[ sid ].status !== 'ACTIVE' )
-      return false
-
-    // Send quit signal to the application
-    this.emit('signal', sid, 'USER:QUIT')
-
-    this.__PROCESS_THREADS[ sid ] = { ...this.__PROCESS_THREADS[ sid ], status: 'LATENT', argv: {} }
-    this.cache.set( this.cacheName, this.__PROCESS_THREADS )
-
-    // Delete process in case it has flash flag
-    if( this.__FLASH_APPLICATIONS[ sid ] ) {
-      this.__PROCESS_THREADS[ sid ].loaded = false
-      delete this.__FLASH_APPLICATIONS[ sid ]
-
-      this.cache.set( `${this.cacheName }-temp`, this.__FLASH_APPLICATIONS )
+      progress( explicitError )
+      throw explicitError
     }
 
-    this.emit('refresh', { loaded: this.loaded(), actives: this.filter('ACTIVE') })
-    this.emit('ws-mode', { mode: !this.filter('ACTIVE').length ? 'ns' : 'auto' })
+    if( !isValidMetadata( metadata ) )
+      throw new Error('Invalid Metadata. Check documentation')
 
-    return true
-  }
+    /**
+     * Create .tmp folder in project parent directory
+     * to temporary hold generated package files
+     */
+    const tmpPath = `${path.dirname( this.cwd )}/.tmp`
+    progress( false, null, `Creating .tmp directory at ${tmpPath}`)
 
-
-  /**
-   * Run an application
-   *
-   * @param {String} name    App name
-   * @param {Object} argv    Input argument variables to run the app
-   *
-   */
-  run( name: string, argv = {} ){
-
-    if( !this.__ACTIVE_APPLICATIONS[ name ] ) {
-      this.emit('alert', 'APPLICATION_NOT_FOUND', name )
-      return false
+    try { await fs.ensureDir( tmpPath ) }
+    catch( error ) {
+      progress( error )
+      throw new Error('Installation failed. Check progress logs for more details')
     }
 
-    const sid = this.__ACTIVE_APPLICATIONS[ name ]
+    const
+    _this = this,
+    filepath = `${tmpPath}/${metadata.nsi}.cup`, // (.cup) Cubic Universal Package
+    uploadPackage = () => {
+      return new Promise( ( resolve, reject ) => {
+        const options = {
+          url: `${_this.cpr}/publish`,
+          headers: {
+            'Authorization': `Bearer ${this.authToken}`,
+            'Content-Type': 'application/octet-stream',
+            'X-User-Agent': 'CPM/1.0'
+          },
+          formData: {
+            metadata: JSON.stringify( metadata ),
+            pkg: fs.createReadStream( filepath ),
+            deploy: 'after-check'
+          },
+          json: true
+        }
 
-    // Start new process
-    this.spawn( sid, argv )
+        request.post( options, ( error, response, body ) => {
+          if( error || ( body && body.error ) )
+            return reject( error || body.message )
 
-    // Temporary load application to loaded list: Get removed when quit
-    if( !this.__PROCESS_THREADS[ sid ].loaded ) {
-      this.__PROCESS_THREADS[ sid ].loaded = true
-
-      this.__FLASH_APPLICATIONS[ sid ] = this.__PROCESS_THREADS[ sid ].metadata.name
-      this.cache.set( `${this.cacheName }-temp`, this.__FLASH_APPLICATIONS )
-
-      this.cache.set( this.cacheName, this.__PROCESS_THREADS )
-      this.emit( 'refresh', { loaded: this.loaded(), actives: this.filter('ACTIVE') })
+          fs.remove( tmpPath ) // Delete .tmp directory
+          resolve( body )
+        })
+      })
     }
 
-    // Provide chain control methods of running process
-    return {
-      quit: () => this.quit.bind(this)( name ),
-      refresh: () => this.refresh.bind(this)( sid )
-    }
-  }
+    const
+    // Generate .cup (Cubic Universal Package) package
+    { prepackSize, etoken } = await this.pack( this.cwd, filepath, progress ),
+    // Add package stages sizes to metadata
+    fileStat = await fs.stat( filepath )
 
-
-  /**
-   * Quit an application
-   *
-   * @param {String} name    App name
-   *
-   */
-  quit( name: string ): boolean{
-
-    if( !this.__ACTIVE_APPLICATIONS[ name ] ) {
-      // Throw no found process alert
-      this.emit('alert', 'APPLICATION_NOT_FOUND', name )
-      return false
+    // Attach .cup encryption token
+    metadata.etoken = etoken
+    metadata.sizes = {
+      download: fileStat.size,
+      installation: prepackSize
     }
 
-    this.kill( this.__ACTIVE_APPLICATIONS[ name ] )
-    return true
+    progress( false, null, 'Publishing package ...')
+    // Upload package to the given CPR (Cubic Package Repositories)
+    return await uploadPackage()
   }
 }

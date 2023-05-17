@@ -1,7 +1,7 @@
 {
-  "name": "@cubic-bubble/spm",
+  "name": "@cubic-bubble/cpm",
   "version": "0.0.1",
-  "description": "Service Process Manager",
+  "description": "Cubic Package Manager",
   "main": "./dist/index",
   "typings": "./dist/index",
   "scripts": {
@@ -11,11 +11,7 @@
     "lint:fix": "eslint . --ext .ts --fix",
     "prepack": "yarn lint:fix"
   },
-  "dependencies": {
-    "@cubic-bubble/lps": "^0.0.14",
-    "all-localstorage": "^1.0.2",
-    "events": "^3.3.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^18.13.0",
     "@typescript-eslint/eslint-plugin": "^5.51.0",
@@ -26,13 +22,13 @@
     "typescript": "^4.9.5"
   },
   "author": "Fabrice K.E.M",
-  "homepage": "https://developer.micros.io/SPM#about",
+  "homepage": "https://developer.micros.io/CPM#about",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cubic-bubble/SPM"
+    "url": "git+https://github.com/cubic-bubble/CPM"
   },
   "license": "GNU",
   "bugs": {
-    "url": "https://github.com/cubic-bubble/SPM/issues"
+    "url": "https://github.com/cubic-bubble/CPM/issues"
   }
 }
