@@ -7,17 +7,17 @@
   resolved "https://registry.yarnpkg.com/@aashutoshrathi/word-wrap/-/word-wrap-1.2.6.tgz#bd9154aec9983f77b3a034ecaa015c2e4201f6cf"
   integrity sha512-1Yjs2SvM8TflER/OD3cOjhWWOZb58A2t7wpE2S9XfBYTiIl+XFhQG2bjy4Pu1I+EAlCNUzRDYDdFwFYUKvXcIA==
 
-"@cubic-bubble/fs@^0.0.2":
-  version "0.0.2"
-  resolved "https://registry.yarnpkg.com/@cubic-bubble/fs/-/fs-0.0.2.tgz#6ce62d4ddc5dffd3e8d0adc0f9f3edb604b73b99"
-  integrity sha512-u7WeHRT4NZsqIIhmjVAXb12dEI9M8IWBah+zyMBxF46P0OvMjKCd3U7tllxSdY+tv8ycR2tbu4gib2bvXvVSEA==
+"@cubic-bubble/fs@^0.0.3":
+  version "0.0.3"
+  resolved "https://registry.yarnpkg.com/@cubic-bubble/fs/-/fs-0.0.3.tgz#1cf724b1209beea6ff51515737a63b2eb4d0bda4"
+  integrity sha512-4Ahak41ad6qQQyE98Rrp0l4fnTdi5C4f2jUN9w2JUERKMwBGdzJKTYvCfKW1BSu08GqbcqK4lxXNvFZuPYyz9A==
   dependencies:
     fs-extra "^11.1.1"
 
-"@cubic-bubble/path@^0.0.2":
-  version "0.0.2"
-  resolved "https://registry.yarnpkg.com/@cubic-bubble/path/-/path-0.0.2.tgz#168bd828133835435dcf1611f17930534bfd5a7a"
-  integrity sha512-Mg3Xi48szy5hfM6DwKFxQaekJrJcGHy9nsC+bo7EgwO7sVugy6ooqoM0e/K/a93xVWv46q9QHNdHgMqTl2PQmg==
+"@cubic-bubble/path@^0.0.3":
+  version "0.0.3"
+  resolved "https://registry.yarnpkg.com/@cubic-bubble/path/-/path-0.0.3.tgz#182eb7e57eb802c41884b7c8d9bf2f3a8ac67b2d"
+  integrity sha512-EIxMjW2us9OQCaWkeEckEMozU4Ka4wZCD+A9AUlJGKzmJE3A7W6ZwVlFb/oii5Gj+hDAvhix1/DL6hepROguaQ==
 
 "@eslint-community/eslint-utils@^4.2.0":
   version "4.4.0"

@@ -12,8 +12,8 @@
     "prepack": "yarn compile"
   },
   "dependencies": {
-    "@cubic-bubble/fs": "^0.0.2",
-    "@cubic-bubble/path": "^0.0.2",
+    "@cubic-bubble/fs": "^0.0.3",
+    "@cubic-bubble/path": "^0.0.3",
     "base-x": "3.0.8",
     "crypto": "^1.0.1",
     "numeral": "^2.0.6",
