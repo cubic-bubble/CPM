@@ -18,13 +18,13 @@ import PackageManager from '../src'
     },
     pm = new PackageManager( options )
 
-    // console.log( await pm.install('application:multipple.sample-app', '-f -d') )
+    // Console.log( await pm.install('application:multipple.sample-app', '-f -d') )
 
-    // console.log( await pm.publish() )
+    // Console.log( await pm.publish() )
 
-    // console.log( await pm.update('application:multipple.sample-app', '-f') )
+    // Console.log( await pm.update('application:multipple.sample-app', '-f') )
 
-    // console.log( await pm.remove('application:multipple.sample-app') )
+    // Console.log( await pm.remove('application:multipple.sample-app') )
   }
   catch( error ) { console.log( error ) }
 } )()

@@ -13,5 +13,5 @@
     "forceConsistentCasingInFileNames": true,
     "allowJs": true
   },
-  "exclude": ["test/"]
+  "exclude": ["test/", "dist/"]
 }

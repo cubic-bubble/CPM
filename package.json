@@ -1,7 +1,7 @@
 {
   "name": "@cubic-bubble/cpm",
   "version": "0.0.1",
-  "description": "Cubic Package Manager",
+  "description": "Cubic Package Manager (Cubic+)",
   "main": "./dist/index",
   "typings": "./dist/index",
   "scripts": {
@@ -9,7 +9,7 @@
     "test": "nodemon",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
-    "prepack": "yarn lint:fix"
+    "prepack": "yarn compile"
   },
   "dependencies": {
     "@cubic-bubble/fs": "^0.0.2",
