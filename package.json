@@ -6,14 +6,30 @@
   "typings": "./dist/index",
   "scripts": {
     "compile": "rimraf ./dist && tsc",
-    "test": "ava test/**/*.js --verbose",
+    "test": "nodemon",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "prepack": "yarn lint:fix"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@cubic-bubble/fs": "^0.0.2",
+    "@cubic-bubble/path": "^0.0.2",
+    "base-x": "3.0.8",
+    "crypto": "^1.0.1",
+    "numeral": "^2.0.6",
+    "rand-token": "^1.0.1",
+    "request": "^2.88.2",
+    "request-promise": "^4.2.6",
+    "shelljs": "^0.8.5",
+    "tar-fs": "^3.0.4",
+    "zlib": "^1.0.5"
+  },
   "devDependencies": {
     "@types/node": "^18.13.0",
+    "@types/numeral": "^2.0.2",
+    "@types/request-promise": "^4.1.48",
+    "@types/shelljs": "^0.8.12",
+    "@types/tar-fs": "^2.0.2",
     "@typescript-eslint/eslint-plugin": "^5.51.0",
     "@typescript-eslint/parser": "^5.51.0",
     "eslint": "^8.33.0",

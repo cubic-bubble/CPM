@@ -9,6 +9,11 @@ export type Metadata = {
   version: string
   favicon: string
   categories: string[]
+  etoken?: string
+  sizes?: {
+    download?: number
+    installation?: number
+  }
   runscript?: {
     [index: string]: {
       workspace?: string
@@ -22,43 +27,30 @@ export type Metadata = {
     }
     services?: { [index: string]: string[] }
   }
+  plugins?: {
+    [index: string]: Metadata
+  }
+  libraries?: {
+    [index: string]: Metadata
+  }
   author: {
     type: string
     name: string
   }
   configs?: { [index: string]: any }
 }
-export type Process = {
-  index?: number
-  loaded: boolean
-  status: 'LATENT' | 'ACTIVE' | 'INACTIVE'
-  metadata: Metadata
-  argv: { [index: string]: any }
-  stats: { [index: string]: any }
+
+export type ShellOptions = {
+  cwd?: string
+  stdio?: 'pipe'
+  shell?: string
 }
-export type CPROptions = {
-  hostname: string
-  version?: number
-  accessToken: string
-  anchorToken: string
-}
-export type LPSOptions = {
-  userAgent: string
-  clientId: string
-}
-export type Options = {
-  UAT: string
-  CPR: CPROptions
-  LPS?: LPSOptions
-}
-export type AssetsManifest = {
-  js?: string[]
-  css?: string[]
-  media?: string[]
-}
-export type MimeSupport = {
-  defaultHandler?: string,
-  sid: string,
-  name: string,
-  type: 'editor' | 'reader'
+export type CPMProgressWatcher = ( error: Error | string | boolean, data?: any, byte?: string | number ) => void
+export type CPMOptions = {
+  manager?: 'cpm' | 'npm' | 'yarn'
+  cwd: string
+  cpr: string
+  authToken: string
+  debug?: boolean
+  watcher: CPMProgressWatcher
 }

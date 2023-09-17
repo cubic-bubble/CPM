@@ -1,11 +1,27 @@
 
-import type { Metadata } from './types'
+import type { Metadata, CPMOptions, CPMProgressWatcher, ShellOptions } from './types'
 import path from 'path'
-import fs from 'fs-inter'
+import fs from '@cubic-bubble/fs'
 import request from 'request'
 import prequest from 'request-promise'
 import rs from './lib/RunScript'
 import CUP from './CUP'
+
+type PackageRefs = {
+  type: string
+  namespace: string
+  name: string
+}
+type PackageInstallPayload = {
+  metadata: Metadata
+  dtoken: string
+  etoken: string
+}
+type PackageInstallResponse = {
+  metadata: Metadata
+  etoken: string
+  dtoken: string
+}
 
 /**
  * Parse package reference string in to
@@ -14,8 +30,7 @@ import CUP from './CUP'
  * @param {Function} reference  - Eg. plugin:namespace.name~version
  *
  */
-function parsePackageReference( reference ){
-
+function parsePackageReference( reference: string ){
   const sequence = reference.match(/(\w+):([a-zA-Z0-9_\-+]+).([a-zA-Z0-9_\-+]+)(~(([0-9]\.?){2,3}))?/)
   if( !sequence || sequence.length < 4 )
     return
@@ -32,6 +47,13 @@ function isValidMetadata( metadata: Metadata ){
 }
 
 export default class PackageManager extends CUP {
+  private manager
+  private cwd: string
+  private cpr: string
+  private authToken: string
+  private debugMode: boolean
+  private rsOptions: ShellOptions
+  private watcher: CPMProgressWatcher = function(){ console.log('Default watcher') }
 
   /**
    * Intanciate PackageManager Object
@@ -39,19 +61,21 @@ export default class PackageManager extends CUP {
    * @param {Object} options       - Initial configuration options
    *
    */
-  constructor( options = {} ){
-    super( options )
+  constructor( options: CPMOptions ){
+    super()
 
     this.manager = options.manager || 'cpm' // Yarn as default node package manager (npm): (Install in packages)
     this.cwd = options.cwd
     this.cpr = options.cpr
     this.authToken = options.authToken
-    this.debugMode = options.debug
+    this.debugMode = options.debug || false
+
+    // Script runner options
+    this.rsOptions = { cwd: this.cwd, stdio: 'pipe' }
 
     // Mute watcher function by default
-    this.watcher = typeof options.watcher == 'function' ? options.watcher : function(){}
-    // Script runner options
-    this.rsOptions = { cwd: this.cwd, stdio: 'pipe', shell: true }
+    if( typeof options.watcher == 'function' )
+      this.watcher = options.watcher
   }
 
   /**
@@ -61,9 +85,9 @@ export default class PackageManager extends CUP {
    * @param {Object} configs    - Custom configurations
    *
    */
-  async init( configs ){
+  async init( configs: Metadata ){
     // Default is CPM config file.
-    let filepath = `${this.cwd }/.metadata`
+    let filepath = `${this.cwd}/.metadata`
 
     // Generate 3rd party CLI package managers (npm, yarn) package.json
     if( ['npm', 'yarn'].includes( this.manager ) )
@@ -95,7 +119,7 @@ export default class PackageManager extends CUP {
    * @param {String} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  shell( verb, packages, params, progress ){
+  shell( verb: string, packages: string[] | string | null, params?: string, progress?: CPMProgressWatcher ){
     return new Promise( ( resolve, reject ) => {
       // Specified packages to uninstall
       packages = Array.isArray( packages ) ? packages.join(' ') : packages || ''
@@ -121,7 +145,7 @@ export default class PackageManager extends CUP {
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  async installDependencies( params = '', progress ){
+  async installDependencies( params = '', progress?: CPMProgressWatcher ){
 
     if( typeof params == 'function' ) {
       progress = params
@@ -152,7 +176,7 @@ export default class PackageManager extends CUP {
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  async install( packages, params = '', progress ){
+  async install( packages: string[] | string, params = '', progress?: CPMProgressWatcher ): Promise<PackageInstallResponse | unknown>{
 
     if( typeof params == 'function' ) {
       progress = params
@@ -178,9 +202,8 @@ export default class PackageManager extends CUP {
       throw new Error('Undefined Cubic Package Repository')
 
     const
-    _this = this,
-    plist = packages.split(/\s+/),
-    fetchPackage = ( { type, namespace, name }, { metadata, dtoken, etoken }, isDep ) => {
+    plist = Array.isArray( packages ) ? packages : packages.split(/\s+/),
+    fetchPackage = ( { type, namespace, name }: PackageRefs, { metadata, dtoken, etoken }: PackageInstallPayload, isDep: boolean ): Promise<void> => {
       return new Promise( ( resolve, reject ) => {
         /**
          * Define installation directory
@@ -190,12 +213,13 @@ export default class PackageManager extends CUP {
          *   - Or into respective dependency type folders (Dependency package: by `isDep` flag)
          */
         const
-        directory = `${_this.cwd}/${isDep ? `.${type}/` : ''}${namespace}/${name}~${metadata.version}`,
+        directory = `${this.cwd}/${isDep ? `.${type}/` : ''}${namespace}/${name}~${metadata.version}`,
         downloadAndUnpack = async () => {
-          progress( false, null, `Installation directory: ${directory}`)
+          typeof progress == 'function'
+          && progress( false, null, `Installation directory: ${directory}`)
 
           await fs.ensureDir( directory )
-          return await this.unpack(`${_this.cpr}/package/fetch?dtoken=${dtoken}`, directory, etoken, progress )
+          await this.unpack(`${this.cpr}/package/fetch?dtoken=${dtoken}`, directory, etoken, progress )
         }
 
         /**
@@ -208,9 +232,11 @@ export default class PackageManager extends CUP {
         // Check directory and append package files
         fs
         .pathExists( directory )
-        .then( yes => {
+        .then( ( yes: boolean ) => {
           if( yes ) {
-            progress( false, null, `Package is already installed. ${directory}\n\tUse --force option to override existing installation.`)
+            typeof progress == 'function'
+            && progress( false, null, `Package is already installed. ${directory}\n\tUse --force option to override existing installation.`)
+
             resolve()
           }
           else downloadAndUnpack().then( resolve ).catch( reject )
@@ -218,7 +244,7 @@ export default class PackageManager extends CUP {
         .catch( reject )
       } )
     },
-    installDependencies = async metadata => {
+    installDependencies = async ( metadata: Metadata ) => {
       // Check and load an application/plugin dependencies
       const
       depRegex = /^(plugin|library):(.+)$/,
@@ -232,24 +258,33 @@ export default class PackageManager extends CUP {
       for( const x in deps ) {
         const [ _, depType ] = deps[x].match( depRegex ) || []
 
-        const response = await eachPackage( deps[x], depType )
+        const response = await eachPackage( deps[x], !!depType )
         if( !response ) throw new Error(`<${deps[x]}> not found`)
 
-        const category = depType === 'plugin' ? 'plugins' : 'libraries' // Plugins or libraries
+        switch( depType ) {
+          case 'plugin': {
+            if( !metadata.plugins ) metadata.plugins = {}
+            metadata.plugins[ response.metadata.nsi ] = response.metadata
+          } break
 
-        if( !metadata[ category ] ) metadata[ category ] = {}
-        metadata[ category ][ response.metadata.nsi ] = response.metadata
+          case 'library': {
+            if( !metadata.libraries ) metadata.libraries = {}
+            metadata.libraries[ response.metadata.nsi ] = response.metadata
+          } break
+        }
       }
 
       return metadata
     },
-    eachPackage = async ( pkg, isDep = false ) => {
+    eachPackage = async ( pkg: string, isDep = false ): Promise<PackageInstallResponse> => {
       const refs = parsePackageReference( pkg )
       if( !refs )
         throw new Error(`Invalid <${pkg}> package reference`)
 
-      progress( false, null, `Resolving ${pkg}`)
-      const response = await prequest.get({ url: `${_this.cpr}/resolve/${pkg}`, json: true })
+      typeof progress == 'function'
+      && progress( false, null, `Resolving ${pkg}`)
+
+      const response = await prequest.get({ url: `${this.cpr}/resolve/${pkg}`, json: true })
       if( response.error ) throw new Error( response.message )
 
       // Fetch packages
@@ -265,10 +300,10 @@ export default class PackageManager extends CUP {
       response.metadata = await installDependencies( response.metadata )
 
       // Install next package if there is. Otherwise resolve
-      return plist.length ? await eachPackage( plist.shift() ) : response
+      return plist.length ? await eachPackage( plist.shift() as string ) : response
     }
 
-    return await eachPackage( plist.shift(), params.includes('-d') )
+    return await eachPackage( plist.shift() as string, params.includes('-d') )
   }
 
   /**
@@ -286,8 +321,7 @@ export default class PackageManager extends CUP {
    *                                [--force] Override directory of existing installations of same packages
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    */
-  async remove( packages, params = '', progress ){
-
+  async remove( packages: string[] | string, params = '', progress?: CPMProgressWatcher ): Promise<string | unknown>{
     if( !packages )
       throw new Error('Undefined package to uninstall')
 
@@ -312,15 +346,14 @@ export default class PackageManager extends CUP {
 
     // Remove package installed with cpm
     const
-    _this = this,
-    plist = packages.split(/\s+/),
-    eachPackage = async pkg => {
+    plist = Array.isArray( packages ) ? packages : packages.split(/\s+/),
+    eachPackage = async ( pkg: string ): Promise<string> => {
       const refs = parsePackageReference( pkg )
       if( !refs ) throw new Error(`Invalid <${pkg}> package reference`)
 
       const
       { type, namespace, name, version } = refs,
-      nspDir = `${_this.cwd}/${type}s/${namespace}`
+      nspDir = `${this.cwd}/.${type}/${namespace}`
 
       // Check whether installation namespace exists
       if( !await fs.pathExists( nspDir ) )
@@ -332,19 +365,23 @@ export default class PackageManager extends CUP {
        */
       if( !version ) {
         const dir = await fs.readdir( nspDir )
-        await Promise.all( dir.map( dirname => {
-          if( dirname.includes( name ) )
-            return fs.remove(`${nspDir}/${dirname}`)
-        } ) )
+
+        if( Array.isArray( dir ) && dir.length )
+          await Promise.all( dir.map( ( dirname: string ) => {
+            if( dirname.includes( name ) )
+              return fs.remove(`${nspDir}/${dirname}`)
+          } ) )
       }
       // Clear only specified version directory
       else await fs.remove(`${nspDir}/${name}~${version}`)
 
       // Install next package if there is. Otherwise resolve
-      return plist.length ? await eachPackage( plist.shift() ) : `<${packages.replace(/\s+/, ', ')}> removed`
+      return plist.length ?
+                await eachPackage( plist.shift() as string )
+                : `<${Array.isArray( packages ) ? packages.join(', ') : packages.replace(/\s+/, ', ')}> removed`
     }
 
-    return await eachPackage( plist.shift() )
+    return await eachPackage( plist.shift() as string )
   }
 
   /**
@@ -363,8 +400,7 @@ export default class PackageManager extends CUP {
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  async update( packages, params = '', progress ){
-
+  async update( packages: string[] | string, params = '', progress?: CPMProgressWatcher ): Promise<PackageInstallResponse | unknown>{
     if( !packages )
       throw new Error('Undefined package to uninstall')
 
@@ -389,7 +425,8 @@ export default class PackageManager extends CUP {
     }
 
     // Update: Reinstall packages to their latest versions
-    packages = packages.split(/\s+/).map( each => { return each.replace(/~(([0-9]\.?){2,3})/, '') }).join(' ')
+    packages = Array.isArray( packages ) ? packages : packages.split(/\s+/)
+    packages = packages.map( each => { return each.replace(/~(([0-9]\.?){2,3})/, '') }).join(' ')
 
     return await this.install( packages, params, progress )
   }
@@ -400,7 +437,7 @@ export default class PackageManager extends CUP {
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  async publish( progress ){
+  async publish( progress?: CPMProgressWatcher ): Promise<string>{
     // Check whether a package repository is defined
     if( !this.cpr )
       throw new Error('Undefined Cubic Package Repository')
@@ -410,10 +447,10 @@ export default class PackageManager extends CUP {
 
     progress = progress || this.watcher
 
-    let metadata
+    let metadata: Metadata
     try {
       progress( false, null, 'Checking metadata in .metadata')
-      metadata = await fs.readJson(`${this.cwd }/.metadata`)
+      metadata = await fs.readJson(`${this.cwd}/.metadata`)
     }
     catch( error ) {
       const explicitError = new Error('Undefined Metadata. Expected .metadata file in project root')
@@ -433,18 +470,17 @@ export default class PackageManager extends CUP {
     progress( false, null, `Creating .tmp directory at ${tmpPath}`)
 
     try { await fs.ensureDir( tmpPath ) }
-    catch( error ) {
+    catch( error: any ) {
       progress( error )
       throw new Error('Installation failed. Check progress logs for more details')
     }
 
     const
-    _this = this,
     filepath = `${tmpPath}/${metadata.nsi}.cup`, // (.cup) Cubic Universal Package
-    uploadPackage = () => {
+    uploadPackage = (): Promise<string> => {
       return new Promise( ( resolve, reject ) => {
         const options = {
-          url: `${_this.cpr}/publish`,
+          url: `${this.cpr}/publish`,
           headers: {
             'Authorization': `Bearer ${this.authToken}`,
             'Content-Type': 'application/octet-stream',

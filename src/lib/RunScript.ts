@@ -1,19 +1,23 @@
 
-import shell from 'shelljs'
+import type { CPMProgressWatcher, ShellOptions } from '../types'
+import Shell from 'shelljs'
 
-export default ( scripts, options, progress ) => {
+export const shell = Shell
+
+export default ( scripts: string, options: ShellOptions, progress?: CPMProgressWatcher ): Promise<void> => {
   return new Promise( ( resolve, reject ) => {
-
     const child = shell.exec( scripts, { ...options, silent: true, async: true } )
 
-    child.stdout.on( 'data', data => {
-      // Console.log('Stdout: ---', data )
-      progress( false, data, data.length )
-    })
-    child.stderr.on( 'data', data => {
-      // Console.log('Stderr: ---', data )
-      progress( data )
-    })
+    if( typeof progress == 'function' ) {
+      child.stdout?.on( 'data', data => {
+        // Console.log('Stdout: ---', data )
+        progress( false, data, data.length )
+      })
+      child.stderr?.on( 'data', data => {
+        // Console.log('Stderr: ---', data )
+        progress( data )
+      })
+    }
 
     child
     .on( 'error', reject )
@@ -21,7 +25,7 @@ export default ( scripts, options, progress ) => {
     .on( 'close', code => {
       // Console.log('Process emit close: %s', code )
       if( code !== 0 ) {
-        const error = new Error(`Error, exit code ${code}`)
+        const error: any = new Error(`Error, exit code ${code}`)
 
         error.name = 'RUN_SCRIPT_ERROR'
         error.code = code
@@ -32,6 +36,6 @@ export default ( scripts, options, progress ) => {
       return resolve()
     })
     // Process emit exit
-    .on( 'exit', code => {} )
+    .on( 'exit', code => console.log('[Shell] Exit: ', code ) )
   } )
 }

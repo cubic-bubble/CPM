@@ -3,11 +3,20 @@
 import path from 'path'
 import zlib from 'zlib'
 import tar from 'tar-fs'
-import fs from 'fs-inter'
-import crypto from 'crypto'
+import fs from '@cubic-bubble/fs'
+import crypto, { BinaryLike } from 'crypto'
 import request from 'request'
 import randtoken from 'rand-token'
-import { encode, decode } from '../lib/Encoder'
+import { encode, decode } from './lib/Encoder'
+
+type Packed = {
+  prepackSize: number
+  etoken: string
+}
+type Unpacked = {
+  unpackSize: number
+}
+type ProgressListener = ( error: boolean, byte: number | null, message: string ) => void
 
 export default class CUP {
   /**
@@ -17,13 +26,13 @@ export default class CUP {
    * @param {String} passcode     - (Optional) Encryption passcode
    *
    */
-  keygen( passcode ){
+  keygen( passcode?: BinaryLike ){
     passcode = passcode || randtoken.generate(88)
     const iv = crypto.randomBytes(16)
 
     return {
       etoken: encode({ passcode, iv }),
-      key: crypto.createHash('sha256').update( passcode ).digest(),
+      key: crypto.createHash('sha256').update( passcode as BinaryLike ).digest(),
       iv
     }
   }
@@ -34,15 +43,15 @@ export default class CUP {
    * @param {Object} etoken     - Project's root directory path
    *
    */
-  keypar( etoken ){
+  keypar( etoken: string ){
     try {
       const { passcode, iv } = decode( etoken )
-      if( !passcode || !iv || !iv.type == 'Buffer' )
+      if( !passcode || !iv || iv.type !== 'Buffer' )
         throw new Error('Invalid etoken')
 
       return {
         key: crypto.createHash('sha256').update( passcode ).digest(),
-        iv: Buffer( iv.data )
+        iv: Buffer.from( iv.data )
       }
     }
     catch( error ) { return {} }
@@ -57,9 +66,10 @@ export default class CUP {
    * @param {Function} progress  - Process tracking report function
    *
    */
-  pack( rootDir, filepath, progress ){
+  pack( rootDir: string, filepath: string, progress?: ProgressListener ): Promise<Packed>{
     return new Promise( ( resolve, reject ) => {
-      progress( false, null, 'Prepacking & Generating the CUP file')
+      typeof progress == 'function'
+      && progress( false, null, 'Prepacking & Generating the CUP file')
 
       // Generate .cup file encryption token, key & iv
       const encryption = this.keygen()
@@ -70,7 +80,9 @@ export default class CUP {
 
       writeStream
       .on('finish', () => {
-        progress( false, prepackSize, 'Prepack completed!' )
+        typeof progress == 'function'
+        && progress( false, prepackSize, 'Prepack completed!' )
+
         return resolve({ prepackSize, etoken: encryption.etoken })
       } )
       .on('error', reject )
@@ -80,7 +92,7 @@ export default class CUP {
       IGNORE_DIRECTORIES = ['node_modules', 'build', 'dist', 'cache', '.git', '.DS_Store', '.plugin', '.application', '.lib'],
       IGNORE_FILES = ['.gitignore'],
       options = {
-        ignore: pathname => {
+        ignore: ( pathname: string ) => {
           // Ignore some folders when packing
           return IGNORE_DIRECTORIES.includes( path.basename( pathname ) )
                   || IGNORE_FILES.includes( path.extname( pathname ) )
@@ -96,7 +108,9 @@ export default class CUP {
       prepackStream
       .on('data', chunk => {
         prepackSize += chunk.length
-        progress( false, prepackSize, 'Prepacking ...' )
+
+        typeof progress == 'function'
+        && progress( false, prepackSize, 'Prepacking ...' )
       } )
       .on('error', reject )
 
@@ -121,7 +135,7 @@ export default class CUP {
    * @param {Function} progress  - Process tracking report function
    *
    */
-  unpack( source, directory, etoken, progress ){
+  unpack( source: string, directory: string, etoken: string, progress?: ProgressListener ): Promise<Unpacked>{
     return new Promise( ( resolve, reject ) => {
       // Get decryption key
       const { key, iv } = this.keypar( etoken )
@@ -137,10 +151,14 @@ export default class CUP {
       unzipStream
       .on('data', chunk => {
         unpackSize += chunk.length
-        progress( false, unpackSize, 'Unpacking ...')
-      })
+
+        typeof progress == 'function'
+        && progress( false, unpackSize, 'Unpacking ...')
+      } )
       .on('close', () => {
-        progress( false, null, 'Unpack completed!')
+        typeof progress == 'function'
+        && progress( false, null, 'Unpack completed!')
+
         resolve({ unpackSize })
       } )
       .on('error', reject )
@@ -148,7 +166,9 @@ export default class CUP {
       // .tar format extracting stream
       const unpackStream = tar.extract( directory ).on( 'error', reject )
 
-      progress( false, null, 'Fetching CUP package ...')
+      typeof progress == 'function'
+      && progress( false, null, 'Fetching CUP package ...')
+
       request
       .get({ url: source, json: true }, error => error && reject( error ) )
       .pipe( decipherStream ) // Decipher package
