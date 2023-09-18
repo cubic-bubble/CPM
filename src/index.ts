@@ -47,7 +47,7 @@ function isValidMetadata( metadata: Metadata ){
 }
 
 export default class PackageManager extends CUP {
-  private manager
+  public manager
   private cwd: string
   private cpr: string
   private authToken: string
@@ -145,7 +145,7 @@ export default class PackageManager extends CUP {
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
-  async installDependencies( params = '', progress?: CPMProgressWatcher ){
+  async installDependencies( params = '', progress?: CPMProgressWatcher ): Promise<unknown>{
 
     if( typeof params == 'function' ) {
       progress = params
