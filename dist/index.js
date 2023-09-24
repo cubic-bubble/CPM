@@ -61,6 +61,15 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -195,10 +204,10 @@ var PackageManager = /** @class */ (function (_super) {
      * for Cubic Package
      *
      * @param {String} params       - Custom process options
-     *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-     *                                [-d]      Is dependency package installation
-     *                                [-v]      Verbose logs
-     *                                [--force] Override directory of existing installations of same packages
+     *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+     *                                [-d] or [--dependency]      Is dependency package installation
+     *                                [-v] or [--verbose]         Verbose logs
+     *                                [--force]                   Override directory of existing installations of same packages
      * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
      *
      */
@@ -230,10 +239,10 @@ var PackageManager = /** @class */ (function (_super) {
      * @param {String} packages     - Space separated list of package references
      *                                Eg. `application:namespace.name~version plugin:...`
      * @param {String} params       - Custom process options
-     *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-     *                                [-d]      Is dependency package installation
-     *                                [-v]      Verbose logs
-     *                                [--force] Override directory of existing installations of same packages
+     *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+     *                                [-d] or [--dependency]      Is dependency package installation
+     *                                [-v] or [--verbose]         Verbose logs
+     *                                [--force]                   Override directory of existing installations of same packages
      * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
      *
      */
@@ -266,7 +275,7 @@ var PackageManager = /** @class */ (function (_super) {
                         // Check whether a package repository is defined
                         if (!((_a = this.cpr) === null || _a === void 0 ? void 0 : _a.baseURL))
                             throw new Error('Undefined Cubic Package Repository');
-                        plist = Array.isArray(packages) ? packages : packages.split(/\s+/), fetchPackage = function (_a, _b, isDep) {
+                        plist = Array.isArray(packages) ? __spreadArray([], packages, true) : packages.split(/\s+/), fetchPackage = function (_a, _b, isDep) {
                             var type = _a.type, namespace = _a.namespace, nsi = _a.nsi;
                             var metadata = _b.metadata, dtoken = _b.dtoken, etoken = _b.etoken;
                             return new Promise(function (resolve, reject) {
@@ -485,7 +494,7 @@ var PackageManager = /** @class */ (function (_super) {
                         return [4 /*yield*/, this.shell(verb, packages, params, progress)];
                     case 1: return [2 /*return*/, _a.sent()];
                     case 2:
-                        plist = Array.isArray(packages) ? packages : packages.split(/\s+/), eachPackage = function (pkg) { return __awaiter(_this, void 0, void 0, function () {
+                        plist = Array.isArray(packages) ? __spreadArray([], packages, true) : packages.split(/\s+/), eachPackage = function (pkg) { return __awaiter(_this, void 0, void 0, function () {
                             var refs, type, namespace, nsi, version, nspDir, dir, _a;
                             return __generator(this, function (_b) {
                                 switch (_b.label) {
@@ -548,10 +557,10 @@ var PackageManager = /** @class */ (function (_super) {
      * @param {String} packages     - Space separated list of package references
      *                                Eg. `application:namespace.name~version plugin:...`
      * @param {String} params       - Custom process options
-     *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-     *                                [-d]      Is dependency package installation
-     *                                [-v]      Verbose logs
-     *                                [--force] Override directory of existing installations of same packages
+     *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+     *                                [-d] or [--dependency]      Is dependency package installation
+     *                                [-v] or [--verbose]         Verbose logs
+     *                                [--force]                   Override directory of existing installations of same packages
      * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
      *
      */

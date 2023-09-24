@@ -146,10 +146,10 @@ export default class PackageManager extends CUP {
    * for Cubic Package
    *
    * @param {String} params       - Custom process options
-   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-   *                                [-d]      Is dependency package installation
-   *                                [-v]      Verbose logs
-   *                                [--force] Override directory of existing installations of same packages
+   *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d] or [--dependency]      Is dependency package installation
+   *                                [-v] or [--verbose]         Verbose logs
+   *                                [--force]                   Override directory of existing installations of same packages
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
@@ -177,10 +177,10 @@ export default class PackageManager extends CUP {
    * @param {String} packages     - Space separated list of package references
    *                                Eg. `application:namespace.name~version plugin:...`
    * @param {String} params       - Custom process options
-   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-   *                                [-d]      Is dependency package installation
-   *                                [-v]      Verbose logs
-   *                                [--force] Override directory of existing installations of same packages
+   *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d] or [--dependency]      Is dependency package installation
+   *                                [-v] or [--verbose]         Verbose logs
+   *                                [--force]                   Override directory of existing installations of same packages
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
@@ -210,7 +210,7 @@ export default class PackageManager extends CUP {
       throw new Error('Undefined Cubic Package Repository')
 
     const
-    plist = Array.isArray( packages ) ? packages : packages.split(/\s+/),
+    plist = Array.isArray( packages ) ? [ ...packages ] : packages.split(/\s+/),
     fetchPackage = ( { type, namespace, nsi }: PackageRefs, { metadata, dtoken, etoken }: PackageInstallPayload, isDep: boolean ): Promise<void> => {
       return new Promise( ( resolve, reject ) => {
         /**
@@ -360,7 +360,7 @@ export default class PackageManager extends CUP {
 
     // Remove package installed with cpm
     const
-    plist = Array.isArray( packages ) ? packages : packages.split(/\s+/),
+    plist = Array.isArray( packages ) ? [ ...packages ] : packages.split(/\s+/),
     eachPackage = async ( pkg: string ): Promise<string> => {
       const refs = parsePackageReference( pkg )
       if( !refs ) throw new Error(`Invalid <${pkg}> package reference`)
@@ -407,10 +407,10 @@ export default class PackageManager extends CUP {
    * @param {String} packages     - Space separated list of package references
    *                                Eg. `application:namespace.name~version plugin:...`
    * @param {String} params       - Custom process options
-   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-   *                                [-d]      Is dependency package installation
-   *                                [-v]      Verbose logs
-   *                                [--force] Override directory of existing installations of same packages
+   *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d] or [--dependency]      Is dependency package installation
+   *                                [-v] or [--verbose]         Verbose logs
+   *                                [--force]                   Override directory of existing installations of same packages
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    *
    */
