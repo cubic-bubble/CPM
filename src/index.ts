@@ -389,7 +389,7 @@ export default class PackageManager extends CUP {
           } ) )
       }
       // Clear only specified version directory
-      else await fs.remove(`${nspDir}/${name}~${version}`)
+      else await fs.remove(`${nspDir}/${nsi}~${version}`)
 
       // Install next package if there is. Otherwise resolve
       return plist.length ?
@@ -418,7 +418,7 @@ export default class PackageManager extends CUP {
    */
   async update( packages: string[] | string, params = '', progress?: CPMProgressWatcher ): Promise<PackageInstallResponse | unknown>{
     if( !packages )
-      throw new Error('Undefined package to uninstall')
+      throw new Error('Undefined package to update')
 
     if( typeof params == 'function' ) {
       progress = params
@@ -442,6 +442,9 @@ export default class PackageManager extends CUP {
 
     // Update: Reinstall packages to their latest versions
     packages = Array.isArray( packages ) ? packages : packages.split(/\s+/)
+    if( !packages.length )
+      throw new Error('Undefined package to update')
+
     packages = packages.map( each => { return each.replace(/~(([0-9]\.?){2,3})/, '') }).join(' ')
 
     return await this.install( packages, params, progress )

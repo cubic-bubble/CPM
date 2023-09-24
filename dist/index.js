@@ -525,7 +525,7 @@ var PackageManager = /** @class */ (function (_super) {
                                         _b.sent();
                                         _b.label = 4;
                                     case 4: return [3 /*break*/, 7];
-                                    case 5: return [4 /*yield*/, fs_1.default.remove("".concat(nspDir, "/").concat(name, "~").concat(version))
+                                    case 5: return [4 /*yield*/, fs_1.default.remove("".concat(nspDir, "/").concat(nsi, "~").concat(version))
                                         // Install next package if there is. Otherwise resolve
                                     ];
                                     case 6:
@@ -576,7 +576,7 @@ var PackageManager = /** @class */ (function (_super) {
                 switch (_a.label) {
                     case 0:
                         if (!packages)
-                            throw new Error('Undefined package to uninstall');
+                            throw new Error('Undefined package to update');
                         if (typeof params == 'function') {
                             progress = params;
                             params = '';
@@ -598,6 +598,8 @@ var PackageManager = /** @class */ (function (_super) {
                     case 2:
                         // Update: Reinstall packages to their latest versions
                         packages = Array.isArray(packages) ? packages : packages.split(/\s+/);
+                        if (!packages.length)
+                            throw new Error('Undefined package to update');
                         packages = packages.map(function (each) { return each.replace(/~(([0-9]\.?){2,3})/, ''); }).join(' ');
                         return [4 /*yield*/, this.install(packages, params, progress)];
                     case 3: return [2 /*return*/, _a.sent()];
