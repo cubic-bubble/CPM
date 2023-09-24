@@ -1,6 +1,6 @@
 {
   "name": "@cubic-bubble/cpm",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Cubic Package Manager (Cubic+)",
   "main": "./dist/index",
   "typings": "./dist/index",
