@@ -9,7 +9,6 @@ export default class PackageManager extends CUP {
     manager: "cpm" | "npm" | "yarn";
     private cwd;
     private cpr;
-    private accessToken;
     private debugMode;
     private rsOptions;
     private watcher;
@@ -80,10 +79,10 @@ export default class PackageManager extends CUP {
      * @param {String} packages     - Space separated list of package references
      *                                Eg. `application:namespace.name~version plugin:...`
      * @param {String} params       - Custom process options
-     *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-     *                                [-d]      Is dependency package installation
-     *                                [-v]      Verbose logs
-     *                                [--force] Override directory of existing installations of same packages
+     *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+     *                                [-d] or [--dependency]      Is dependency package installation
+     *                                [-v] or [--verbose]         Verbose logs
+     *                                [--force]                   Override directory of existing installations of same packages
      * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
      */
     remove(packages: string[] | string, params?: string, progress?: CPMProgressWatcher): Promise<string | unknown>;

@@ -82,8 +82,8 @@ function parsePackageReference(reference) {
     var sequence = reference.match(/(\w+):([a-zA-Z0-9_\-+]+).([a-zA-Z0-9_\-+]+)(~(([0-9]\.?){2,3}))?/);
     if (!sequence || sequence.length < 4)
         return;
-    var _ = sequence[0], type = sequence[1], namespace = sequence[2], name = sequence[3], __ = sequence[4], version = sequence[5];
-    return { type: type, namespace: namespace, name: name, version: version };
+    var _ = sequence[0], type = sequence[1], namespace = sequence[2], nsi = sequence[3], __ = sequence[4], version = sequence[5];
+    return { type: type, namespace: namespace, nsi: nsi, version: version };
 }
 function isValidMetadata(metadata) {
     return !!metadata.type
@@ -102,10 +102,14 @@ var PackageManager = /** @class */ (function (_super) {
     function PackageManager(options) {
         var _this = _super.call(this) || this;
         _this.watcher = function () { console.log('Default watcher'); };
+        // Configure access to package repository
+        var _a = options.cpr, source = _a.source, apiversion = _a.apiversion, token = _a.token;
+        _this.cpr = {
+            baseURL: "".concat(source, "/v").concat(apiversion || '1'),
+            accessToken: token || ''
+        };
         _this.manager = options.manager || 'cpm'; // Yarn as default node package manager (npm): (Install in packages)
         _this.cwd = options.cwd;
-        _this.cpr = options.cpr;
-        _this.accessToken = options.accessToken;
         _this.debugMode = options.debug || false;
         // Script runner options
         _this.rsOptions = { cwd: _this.cwd, stdio: 'pipe' };
@@ -234,12 +238,13 @@ var PackageManager = /** @class */ (function (_super) {
      *
      */
     PackageManager.prototype.install = function (packages, params, progress) {
+        var _a;
         if (params === void 0) { params = ''; }
         return __awaiter(this, void 0, void 0, function () {
             var verb, plist, fetchPackage, installDependencies, eachPackage;
             var _this = this;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
+            return __generator(this, function (_b) {
+                switch (_b.label) {
                     case 0:
                         if (typeof params == 'function') {
                             progress = params;
@@ -256,13 +261,13 @@ var PackageManager = /** @class */ (function (_super) {
                             default: verb = 'add';
                         }
                         return [4 /*yield*/, this.shell(verb, packages, params, progress)];
-                    case 1: return [2 /*return*/, _a.sent()];
+                    case 1: return [2 /*return*/, _b.sent()];
                     case 2:
                         // Check whether a package repository is defined
-                        if (!this.cpr)
+                        if (!((_a = this.cpr) === null || _a === void 0 ? void 0 : _a.baseURL))
                             throw new Error('Undefined Cubic Package Repository');
                         plist = Array.isArray(packages) ? packages : packages.split(/\s+/), fetchPackage = function (_a, _b, isDep) {
-                            var type = _a.type, namespace = _a.namespace, name = _a.name;
+                            var type = _a.type, namespace = _a.namespace, nsi = _a.nsi;
                             var metadata = _b.metadata, dtoken = _b.dtoken, etoken = _b.etoken;
                             return new Promise(function (resolve, reject) {
                                 /**
@@ -272,7 +277,7 @@ var PackageManager = /** @class */ (function (_super) {
                                  *   - Directly into `cwd` by namespace folder (Main package)
                                  *   - Or into respective dependency type folders (Dependency package: by `isDep` flag)
                                  */
-                                var directory = "".concat(_this.cwd, "/").concat(isDep ? ".".concat(type, "/") : '').concat(namespace, "/").concat(name, "~").concat(metadata.version), downloadAndUnpack = function () { return __awaiter(_this, void 0, void 0, function () {
+                                var directory = "".concat(_this.cwd, "/").concat(isDep ? ".".concat(type, "/") : '').concat(namespace, "/").concat(nsi, "~").concat(metadata.version), downloadAndUnpack = function () { return __awaiter(_this, void 0, void 0, function () {
                                     return __generator(this, function (_a) {
                                         switch (_a.label) {
                                             case 0:
@@ -281,7 +286,7 @@ var PackageManager = /** @class */ (function (_super) {
                                                 return [4 /*yield*/, fs_1.default.ensureDir(directory)];
                                             case 1:
                                                 _a.sent();
-                                                return [4 /*yield*/, this.unpack("".concat(this.cpr, "/package/fetch?dtoken=").concat(dtoken), directory, etoken, progress)];
+                                                return [4 /*yield*/, this.unpack("".concat(this.cpr.baseURL, "/package/fetch?dtoken=").concat(dtoken), directory, etoken, progress)];
                                             case 2:
                                                 _a.sent();
                                                 return [2 /*return*/];
@@ -294,19 +299,19 @@ var PackageManager = /** @class */ (function (_super) {
                                  */
                                 if (params.includes('--force'))
                                     return downloadAndUnpack().then(resolve).catch(reject);
-                                // Check directory and append package files
-                                fs_1.default
-                                    .pathExists(directory)
-                                    .then(function (yes) {
-                                    if (yes) {
-                                        typeof progress == 'function'
-                                            && progress(false, null, "Package is already installed. ".concat(directory, "\n\tUse --force option to override existing installation."));
-                                        resolve();
-                                    }
-                                    else
-                                        downloadAndUnpack().then(resolve).catch(reject);
+                                /**
+                                 * Check directory where to append package files:
+                                 *
+                                 * `.metadata` is use to identify whether an
+                                 * installation already exists in that directory.
+                                 */
+                                fs_1.default.readJson("".concat(directory, "/.metadata"))
+                                    .then(function () {
+                                    typeof progress == 'function'
+                                        && progress(false, null, "Package <".concat(type, ":").concat(namespace, ".").concat(nsi, "~").concat(metadata.version, "> is already installed. ").concat(directory, "\n\tUse -f or --force option to override existing installation."));
+                                    resolve();
                                 })
-                                    .catch(reject);
+                                    .catch(function () { return downloadAndUnpack().then(resolve).catch(reject); });
                             });
                         }, installDependencies = function (metadata) { return __awaiter(_this, void 0, void 0, function () {
                             var depRegex, deps, _a, _b, _c, _i, x, _d, _, depType, response;
@@ -362,7 +367,7 @@ var PackageManager = /** @class */ (function (_super) {
                         }); }, eachPackage = function (pkg, isDep) {
                             if (isDep === void 0) { isDep = false; }
                             return __awaiter(_this, void 0, void 0, function () {
-                                var refs, response, _a, _b, _c;
+                                var refs, headers, response, _a, _b, _c;
                                 return __generator(this, function (_d) {
                                     switch (_d.label) {
                                         case 0:
@@ -371,7 +376,11 @@ var PackageManager = /** @class */ (function (_super) {
                                                 throw new Error("Invalid <".concat(pkg, "> package reference"));
                                             typeof progress == 'function'
                                                 && progress(false, null, "Resolving ".concat(pkg));
-                                            return [4 /*yield*/, request_promise_1.default.get({ url: "".concat(this.cpr, "/resolve/").concat(pkg), json: true })];
+                                            headers = {
+                                                'Authorization': "Bearer ".concat(this.cpr.accessToken),
+                                                'X-User-Agent': 'CPM/1.0'
+                                            };
+                                            return [4 /*yield*/, request_promise_1.default.get({ url: "".concat(this.cpr.baseURL, "/resolve/").concat(pkg), headers: headers, json: true })];
                                         case 1:
                                             response = _d.sent();
                                             if (response.error)
@@ -428,8 +437,8 @@ var PackageManager = /** @class */ (function (_super) {
                                 });
                             });
                         };
-                        return [4 /*yield*/, eachPackage(plist.shift(), params.includes('-d'))];
-                    case 3: return [2 /*return*/, _a.sent()];
+                        return [4 /*yield*/, eachPackage(plist.shift(), params.includes('-d') || params.includes('--dependency'))];
+                    case 3: return [2 /*return*/, _b.sent()];
                 }
             });
         });
@@ -443,10 +452,10 @@ var PackageManager = /** @class */ (function (_super) {
      * @param {String} packages     - Space separated list of package references
      *                                Eg. `application:namespace.name~version plugin:...`
      * @param {String} params       - Custom process options
-     *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-     *                                [-d]      Is dependency package installation
-     *                                [-v]      Verbose logs
-     *                                [--force] Override directory of existing installations of same packages
+     *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+     *                                [-d] or [--dependency]      Is dependency package installation
+     *                                [-v] or [--verbose]         Verbose logs
+     *                                [--force]                   Override directory of existing installations of same packages
      * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
      */
     PackageManager.prototype.remove = function (packages, params, progress) {
@@ -477,14 +486,14 @@ var PackageManager = /** @class */ (function (_super) {
                     case 1: return [2 /*return*/, _a.sent()];
                     case 2:
                         plist = Array.isArray(packages) ? packages : packages.split(/\s+/), eachPackage = function (pkg) { return __awaiter(_this, void 0, void 0, function () {
-                            var refs, type, namespace, name, version, nspDir, dir, _a;
+                            var refs, type, namespace, nsi, version, nspDir, dir, _a;
                             return __generator(this, function (_b) {
                                 switch (_b.label) {
                                     case 0:
                                         refs = parsePackageReference(pkg);
                                         if (!refs)
                                             throw new Error("Invalid <".concat(pkg, "> package reference"));
-                                        type = refs.type, namespace = refs.namespace, name = refs.name, version = refs.version, nspDir = "".concat(this.cwd, "/.").concat(type, "/").concat(namespace);
+                                        type = refs.type, namespace = refs.namespace, nsi = refs.nsi, version = refs.version, nspDir = "".concat(this.cwd, "/.").concat(type, "/").concat(namespace);
                                         return [4 /*yield*/, fs_1.default.pathExists(nspDir)];
                                     case 1:
                                         // Check whether installation namespace exists
@@ -496,7 +505,7 @@ var PackageManager = /** @class */ (function (_super) {
                                         dir = _b.sent();
                                         if (!(Array.isArray(dir) && dir.length)) return [3 /*break*/, 4];
                                         return [4 /*yield*/, Promise.all(dir.map(function (dirname) {
-                                                if (dirname.includes(name))
+                                                if (dirname.includes(nsi))
                                                     return fs_1.default.remove("".concat(nspDir, "/").concat(dirname));
                                             }))];
                                     case 3:
@@ -590,29 +599,30 @@ var PackageManager = /** @class */ (function (_super) {
      *
      */
     PackageManager.prototype.publish = function (progress) {
+        var _a;
         return __awaiter(this, void 0, void 0, function () {
-            var metadata, error_2, explicitError, tmpPath, error_3, filepath, uploadPackage, _a, prepackSize, etoken, 
+            var metadata, error_2, explicitError, tmpPath, error_3, filepath, uploadPackage, _b, prepackSize, etoken, 
             // Add package stages sizes to metadata
             fileStat;
             var _this = this;
-            return __generator(this, function (_b) {
-                switch (_b.label) {
+            return __generator(this, function (_c) {
+                switch (_c.label) {
                     case 0:
                         // Check whether a package repository is defined
-                        if (!this.cpr)
+                        if (!((_a = this.cpr) === null || _a === void 0 ? void 0 : _a.baseURL))
                             throw new Error('Undefined Cubic Package Repository');
                         // TODO: Preliminary checks of packagable configurations
                         progress = progress || this.watcher;
-                        _b.label = 1;
+                        _c.label = 1;
                     case 1:
-                        _b.trys.push([1, 3, , 4]);
+                        _c.trys.push([1, 3, , 4]);
                         progress(false, null, 'Checking metadata in .metadata');
                         return [4 /*yield*/, fs_1.default.readJson("".concat(this.cwd, "/.metadata"))];
                     case 2:
-                        metadata = _b.sent();
+                        metadata = _c.sent();
                         return [3 /*break*/, 4];
                     case 3:
-                        error_2 = _b.sent();
+                        error_2 = _c.sent();
                         explicitError = new Error('Undefined Metadata. Expected .metadata file in project root');
                         progress(explicitError);
                         throw explicitError;
@@ -621,24 +631,24 @@ var PackageManager = /** @class */ (function (_super) {
                             throw new Error('Invalid Metadata. Check documentation');
                         tmpPath = "".concat(path_1.default.dirname(this.cwd), "/.tmp");
                         progress(false, null, "Creating .tmp directory at ".concat(tmpPath));
-                        _b.label = 5;
+                        _c.label = 5;
                     case 5:
-                        _b.trys.push([5, 7, , 8]);
+                        _c.trys.push([5, 7, , 8]);
                         return [4 /*yield*/, fs_1.default.ensureDir(tmpPath)];
                     case 6:
-                        _b.sent();
+                        _c.sent();
                         return [3 /*break*/, 8];
                     case 7:
-                        error_3 = _b.sent();
+                        error_3 = _c.sent();
                         progress(error_3);
                         throw new Error('Installation failed. Check progress logs for more details');
                     case 8:
                         filepath = "".concat(tmpPath, "/").concat(metadata.nsi, ".cup"), uploadPackage = function () {
                             return new Promise(function (resolve, reject) {
                                 var options = {
-                                    url: "".concat(_this.cpr, "/publish"),
+                                    url: "".concat(_this.cpr.baseURL, "/publish"),
                                     headers: {
-                                        'Authorization': "Bearer ".concat(_this.accessToken),
+                                        'Authorization': "Bearer ".concat(_this.cpr.accessToken),
                                         'Content-Type': 'application/octet-stream',
                                         'X-User-Agent': 'CPM/1.0'
                                     },
@@ -659,12 +669,12 @@ var PackageManager = /** @class */ (function (_super) {
                         };
                         return [4 /*yield*/, this.pack(this.cwd, filepath, progress)];
                     case 9:
-                        _a = _b.sent(), prepackSize = _a.prepackSize, etoken = _a.etoken;
+                        _b = _c.sent(), prepackSize = _b.prepackSize, etoken = _b.etoken;
                         return [4 /*yield*/, fs_1.default.stat(filepath)
                             // Attach .cup encryption token
                         ];
                     case 10:
-                        fileStat = _b.sent();
+                        fileStat = _c.sent();
                         // Attach .cup encryption token
                         metadata.etoken = etoken;
                         metadata.sizes = {
@@ -675,7 +685,7 @@ var PackageManager = /** @class */ (function (_super) {
                         return [4 /*yield*/, uploadPackage()];
                     case 11: 
                     // Upload package to the given CPR (Cubic Package Repositories)
-                    return [2 /*return*/, _b.sent()];
+                    return [2 /*return*/, _c.sent()];
                 }
             });
         });

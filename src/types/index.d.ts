@@ -46,11 +46,16 @@ export type ShellOptions = {
   shell?: string
 }
 export type CPMProgressWatcher = ( error: Error | string | boolean, data?: any, byte?: string | number ) => void
+export type CPRAccess = {
+  source: string
+  apiversion?: number
+  username?: string
+  token?: string
+}
 export type CPMOptions = {
-  manager?: 'cpm' | 'npm' | 'yarn'
+  cpr: CPRAccess
   cwd: string
-  cpr: string
-  accessToken: string
+  manager?: 'cpm' | 'npm' | 'yarn'
   debug?: boolean
   watcher: CPMProgressWatcher
 }

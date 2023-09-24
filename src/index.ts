@@ -10,7 +10,8 @@ import CUP from './CUP'
 type PackageRefs = {
   type: string
   namespace: string
-  name: string
+  nsi: string
+  version?: string
 }
 type PackageInstallPayload = {
   metadata: Metadata
@@ -30,13 +31,13 @@ type PackageInstallResponse = {
  * @param {Function} reference  - Eg. plugin:namespace.name~version
  *
  */
-function parsePackageReference( reference: string ){
+function parsePackageReference( reference: string ): PackageRefs | undefined{
   const sequence = reference.match(/(\w+):([a-zA-Z0-9_\-+]+).([a-zA-Z0-9_\-+]+)(~(([0-9]\.?){2,3}))?/)
   if( !sequence || sequence.length < 4 )
     return
 
-  const [ _, type, namespace, name, __, version ] = sequence
-  return { type, namespace, name, version }
+  const [ _, type, namespace, nsi, __, version ] = sequence
+  return { type, namespace, nsi, version }
 }
 
 function isValidMetadata( metadata: Metadata ){
@@ -49,8 +50,10 @@ function isValidMetadata( metadata: Metadata ){
 export default class PackageManager extends CUP {
   public manager
   private cwd: string
-  private cpr: string
-  private accessToken: string
+  private cpr: {
+    baseURL: string
+    accessToken: string
+  }
   private debugMode: boolean
   private rsOptions: ShellOptions
   private watcher: CPMProgressWatcher = function(){ console.log('Default watcher') }
@@ -64,10 +67,15 @@ export default class PackageManager extends CUP {
   constructor( options: CPMOptions ){
     super()
 
+    // Configure access to package repository
+    const { source, apiversion, token } = options.cpr
+    this.cpr = {
+      baseURL: `${source}/v${apiversion || '1'}`,
+      accessToken: token || ''
+    }
+
     this.manager = options.manager || 'cpm' // Yarn as default node package manager (npm): (Install in packages)
     this.cwd = options.cwd
-    this.cpr = options.cpr
-    this.accessToken = options.accessToken
     this.debugMode = options.debug || false
 
     // Script runner options
@@ -198,12 +206,12 @@ export default class PackageManager extends CUP {
     }
 
     // Check whether a package repository is defined
-    if( !this.cpr )
+    if( !this.cpr?.baseURL )
       throw new Error('Undefined Cubic Package Repository')
 
     const
     plist = Array.isArray( packages ) ? packages : packages.split(/\s+/),
-    fetchPackage = ( { type, namespace, name }: PackageRefs, { metadata, dtoken, etoken }: PackageInstallPayload, isDep: boolean ): Promise<void> => {
+    fetchPackage = ( { type, namespace, nsi }: PackageRefs, { metadata, dtoken, etoken }: PackageInstallPayload, isDep: boolean ): Promise<void> => {
       return new Promise( ( resolve, reject ) => {
         /**
          * Define installation directory
@@ -213,13 +221,13 @@ export default class PackageManager extends CUP {
          *   - Or into respective dependency type folders (Dependency package: by `isDep` flag)
          */
         const
-        directory = `${this.cwd}/${isDep ? `.${type}/` : ''}${namespace}/${name}~${metadata.version}`,
+        directory = `${this.cwd}/${isDep ? `.${type}/` : ''}${namespace}/${nsi}~${metadata.version}`,
         downloadAndUnpack = async () => {
           typeof progress == 'function'
           && progress( false, null, `Installation directory: ${directory}`)
 
           await fs.ensureDir( directory )
-          await this.unpack(`${this.cpr}/package/fetch?dtoken=${dtoken}`, directory, etoken, progress )
+          await this.unpack(`${this.cpr.baseURL}/package/fetch?dtoken=${dtoken}`, directory, etoken, progress )
         }
 
         /**
@@ -229,19 +237,20 @@ export default class PackageManager extends CUP {
         if( params.includes('--force') )
           return downloadAndUnpack().then( resolve ).catch( reject )
 
-        // Check directory and append package files
-        fs
-        .pathExists( directory )
-        .then( ( yes: boolean ) => {
-          if( yes ) {
+        /**
+         * Check directory where to append package files:
+         *
+         * `.metadata` is use to identify whether an
+         * installation already exists in that directory.
+         */
+        fs.readJson(`${directory}/.metadata`)
+          .then( () => {
             typeof progress == 'function'
-            && progress( false, null, `Package is already installed. ${directory}\n\tUse --force option to override existing installation.`)
+            && progress( false, null, `Package <${type}:${namespace}.${nsi}~${metadata.version}> is already installed. ${directory}\n\tUse -f or --force option to override existing installation.`)
 
             resolve()
-          }
-          else downloadAndUnpack().then( resolve ).catch( reject )
-        } )
-        .catch( reject )
+          })
+          .catch( () => downloadAndUnpack().then( resolve ).catch( reject ) )
       } )
     },
     installDependencies = async ( metadata: Metadata ) => {
@@ -284,7 +293,12 @@ export default class PackageManager extends CUP {
       typeof progress == 'function'
       && progress( false, null, `Resolving ${pkg}`)
 
-      const response = await prequest.get({ url: `${this.cpr}/resolve/${pkg}`, json: true })
+      const
+      headers = {
+        'Authorization': `Bearer ${this.cpr.accessToken}`,
+        'X-User-Agent': 'CPM/1.0'
+      },
+      response = await prequest.get({ url: `${this.cpr.baseURL}/resolve/${pkg}`, headers, json: true })
       if( response.error ) throw new Error( response.message )
 
       // Fetch packages
@@ -303,7 +317,7 @@ export default class PackageManager extends CUP {
       return plist.length ? await eachPackage( plist.shift() as string ) : response
     }
 
-    return await eachPackage( plist.shift() as string, params.includes('-d') )
+    return await eachPackage( plist.shift() as string, params.includes('-d') || params.includes('--dependency') )
   }
 
   /**
@@ -315,10 +329,10 @@ export default class PackageManager extends CUP {
    * @param {String} packages     - Space separated list of package references
    *                                Eg. `application:namespace.name~version plugin:...`
    * @param {String} params       - Custom process options
-   *                                [-f]      Full installation process (Retrieve metadata & fetch package files)
-   *                                [-d]      Is dependency package installation
-   *                                [-v]      Verbose logs
-   *                                [--force] Override directory of existing installations of same packages
+   *                                [-f] or [--full]            Full installation process (Retrieve metadata & fetch package files)
+   *                                [-d] or [--dependency]      Is dependency package installation
+   *                                [-v] or [--verbose]         Verbose logs
+   *                                [--force]                   Override directory of existing installations of same packages
    * @param {Function} progress   - Process tracking report function. (optional) Default to `this.watcher`
    */
   async remove( packages: string[] | string, params = '', progress?: CPMProgressWatcher ): Promise<string | unknown>{
@@ -352,7 +366,7 @@ export default class PackageManager extends CUP {
       if( !refs ) throw new Error(`Invalid <${pkg}> package reference`)
 
       const
-      { type, namespace, name, version } = refs,
+      { type, namespace, nsi, version } = refs,
       nspDir = `${this.cwd}/.${type}/${namespace}`
 
       // Check whether installation namespace exists
@@ -368,7 +382,7 @@ export default class PackageManager extends CUP {
 
         if( Array.isArray( dir ) && dir.length )
           await Promise.all( dir.map( ( dirname: string ) => {
-            if( dirname.includes( name ) )
+            if( dirname.includes( nsi ) )
               return fs.remove(`${nspDir}/${dirname}`)
           } ) )
       }
@@ -439,7 +453,7 @@ export default class PackageManager extends CUP {
    */
   async publish( progress?: CPMProgressWatcher ): Promise<string>{
     // Check whether a package repository is defined
-    if( !this.cpr )
+    if( !this.cpr?.baseURL )
       throw new Error('Undefined Cubic Package Repository')
 
     // TODO: Preliminary checks of packagable configurations
@@ -480,9 +494,9 @@ export default class PackageManager extends CUP {
     uploadPackage = (): Promise<string> => {
       return new Promise( ( resolve, reject ) => {
         const options = {
-          url: `${this.cpr}/publish`,
+          url: `${this.cpr.baseURL}/publish`,
           headers: {
-            'Authorization': `Bearer ${this.accessToken}`,
+            'Authorization': `Bearer ${this.cpr.accessToken}`,
             'Content-Type': 'application/octet-stream',
             'X-User-Agent': 'CPM/1.0'
           },
