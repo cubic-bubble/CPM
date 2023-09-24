@@ -50,7 +50,7 @@ export default class PackageManager extends CUP {
   public manager
   private cwd: string
   private cpr: string
-  private authToken: string
+  private accessToken: string
   private debugMode: boolean
   private rsOptions: ShellOptions
   private watcher: CPMProgressWatcher = function(){ console.log('Default watcher') }
@@ -67,7 +67,7 @@ export default class PackageManager extends CUP {
     this.manager = options.manager || 'cpm' // Yarn as default node package manager (npm): (Install in packages)
     this.cwd = options.cwd
     this.cpr = options.cpr
-    this.authToken = options.authToken
+    this.accessToken = options.accessToken
     this.debugMode = options.debug || false
 
     // Script runner options
@@ -482,7 +482,7 @@ export default class PackageManager extends CUP {
         const options = {
           url: `${this.cpr}/publish`,
           headers: {
-            'Authorization': `Bearer ${this.authToken}`,
+            'Authorization': `Bearer ${this.accessToken}`,
             'Content-Type': 'application/octet-stream',
             'X-User-Agent': 'CPM/1.0'
           },

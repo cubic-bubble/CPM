@@ -105,7 +105,7 @@ var PackageManager = /** @class */ (function (_super) {
         _this.manager = options.manager || 'cpm'; // Yarn as default node package manager (npm): (Install in packages)
         _this.cwd = options.cwd;
         _this.cpr = options.cpr;
-        _this.authToken = options.authToken;
+        _this.accessToken = options.accessToken;
         _this.debugMode = options.debug || false;
         // Script runner options
         _this.rsOptions = { cwd: _this.cwd, stdio: 'pipe' };
@@ -638,7 +638,7 @@ var PackageManager = /** @class */ (function (_super) {
                                 var options = {
                                     url: "".concat(_this.cpr, "/publish"),
                                     headers: {
-                                        'Authorization': "Bearer ".concat(_this.authToken),
+                                        'Authorization': "Bearer ".concat(_this.accessToken),
                                         'Content-Type': 'application/octet-stream',
                                         'X-User-Agent': 'CPM/1.0'
                                     },

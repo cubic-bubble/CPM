@@ -6,10 +6,10 @@ type PackageInstallResponse = {
     dtoken: string;
 };
 export default class PackageManager extends CUP {
-    private manager;
+    manager: "cpm" | "npm" | "yarn";
     private cwd;
     private cpr;
-    private authToken;
+    private accessToken;
     private debugMode;
     private rsOptions;
     private watcher;

@@ -50,7 +50,7 @@ export type CPMOptions = {
   manager?: 'cpm' | 'npm' | 'yarn'
   cwd: string
   cpr: string
-  authToken: string
+  accessToken: string
   debug?: boolean
   watcher: CPMProgressWatcher
 }
