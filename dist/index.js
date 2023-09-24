@@ -112,11 +112,13 @@ var PackageManager = /** @class */ (function (_super) {
         var _this = _super.call(this) || this;
         _this.watcher = function () { console.log('Default watcher'); };
         // Configure access to package repository
-        var _a = options.cpr, source = _a.source, apiversion = _a.apiversion, token = _a.token;
-        _this.cpr = {
-            baseURL: "".concat(source, "/v").concat(apiversion || '1'),
-            accessToken: token || ''
-        };
+        if (options.cpr) {
+            var _a = options.cpr, source = _a.source, apiversion = _a.apiversion, token = _a.token;
+            _this.cpr = {
+                baseURL: "".concat(source, "/v").concat(apiversion || '1'),
+                accessToken: token || ''
+            };
+        }
         _this.manager = options.manager || 'cpm'; // Yarn as default node package manager (npm): (Install in packages)
         _this.cwd = options.cwd;
         _this.debugMode = options.debug || false;
@@ -287,17 +289,18 @@ var PackageManager = /** @class */ (function (_super) {
                                  *   - Or into respective dependency type folders (Dependency package: by `isDep` flag)
                                  */
                                 var directory = "".concat(_this.cwd, "/").concat(isDep ? ".".concat(type, "/") : '').concat(namespace, "/").concat(nsi, "~").concat(metadata.version), downloadAndUnpack = function () { return __awaiter(_this, void 0, void 0, function () {
-                                    return __generator(this, function (_a) {
-                                        switch (_a.label) {
+                                    var _a;
+                                    return __generator(this, function (_b) {
+                                        switch (_b.label) {
                                             case 0:
                                                 typeof progress == 'function'
                                                     && progress(false, null, "Installation directory: ".concat(directory));
                                                 return [4 /*yield*/, fs_1.default.ensureDir(directory)];
                                             case 1:
-                                                _a.sent();
-                                                return [4 /*yield*/, this.unpack("".concat(this.cpr.baseURL, "/package/fetch?dtoken=").concat(dtoken), directory, etoken, progress)];
+                                                _b.sent();
+                                                return [4 /*yield*/, this.unpack("".concat((_a = this.cpr) === null || _a === void 0 ? void 0 : _a.baseURL, "/package/fetch?dtoken=").concat(dtoken), directory, etoken, progress)];
                                             case 2:
-                                                _a.sent();
+                                                _b.sent();
                                                 return [2 /*return*/];
                                         }
                                     });
@@ -377,8 +380,9 @@ var PackageManager = /** @class */ (function (_super) {
                             if (isDep === void 0) { isDep = false; }
                             return __awaiter(_this, void 0, void 0, function () {
                                 var refs, headers, response, _a, _b, _c;
-                                return __generator(this, function (_d) {
-                                    switch (_d.label) {
+                                var _d, _e;
+                                return __generator(this, function (_f) {
+                                    switch (_f.label) {
                                         case 0:
                                             refs = parsePackageReference(pkg);
                                             if (!refs)
@@ -386,12 +390,12 @@ var PackageManager = /** @class */ (function (_super) {
                                             typeof progress == 'function'
                                                 && progress(false, null, "Resolving ".concat(pkg));
                                             headers = {
-                                                'Authorization': "Bearer ".concat(this.cpr.accessToken),
+                                                'Authorization': "Bearer ".concat((_d = this.cpr) === null || _d === void 0 ? void 0 : _d.accessToken),
                                                 'X-User-Agent': 'CPM/1.0'
                                             };
-                                            return [4 /*yield*/, request_promise_1.default.get({ url: "".concat(this.cpr.baseURL, "/resolve/").concat(pkg), headers: headers, json: true })];
+                                            return [4 /*yield*/, request_promise_1.default.get({ url: "".concat((_e = this.cpr) === null || _e === void 0 ? void 0 : _e.baseURL, "/resolve/").concat(pkg), headers: headers, json: true })];
                                         case 1:
-                                            response = _d.sent();
+                                            response = _f.sent();
                                             if (response.error)
                                                 throw new Error(response.message);
                                             // Fetch packages
@@ -408,8 +412,8 @@ var PackageManager = /** @class */ (function (_super) {
                                                  */
                                             ];
                                         case 2:
-                                            _a = (_d.sent());
-                                            _d.label = 3;
+                                            _a = (_f.sent());
+                                            _f.label = 3;
                                         case 3:
                                             // Fetch packages
                                             _a;
@@ -430,15 +434,15 @@ var PackageManager = /** @class */ (function (_super) {
                                              * NOTE: Regular mode only. Plugin are directly added to
                                              *       `.metadata` file in sandbox mode.
                                              */
-                                            _b.metadata = _d.sent();
+                                            _b.metadata = _f.sent();
                                             if (!plist.length) return [3 /*break*/, 6];
                                             return [4 /*yield*/, eachPackage(plist.shift())];
                                         case 5:
-                                            _c = _d.sent();
+                                            _c = _f.sent();
                                             return [3 /*break*/, 7];
                                         case 6:
                                             _c = response;
-                                            _d.label = 7;
+                                            _f.label = 7;
                                         case 7: 
                                         // Install next package if there is. Otherwise resolve
                                         return [2 /*return*/, _c];
@@ -654,10 +658,11 @@ var PackageManager = /** @class */ (function (_super) {
                     case 8:
                         filepath = "".concat(tmpPath, "/").concat(metadata.nsi, ".cup"), uploadPackage = function () {
                             return new Promise(function (resolve, reject) {
+                                var _a, _b;
                                 var options = {
-                                    url: "".concat(_this.cpr.baseURL, "/publish"),
+                                    url: "".concat((_a = _this.cpr) === null || _a === void 0 ? void 0 : _a.baseURL, "/publish"),
                                     headers: {
-                                        'Authorization': "Bearer ".concat(_this.cpr.accessToken),
+                                        'Authorization': "Bearer ".concat((_b = _this.cpr) === null || _b === void 0 ? void 0 : _b.accessToken),
                                         'Content-Type': 'application/octet-stream',
                                         'X-User-Agent': 'CPM/1.0'
                                     },

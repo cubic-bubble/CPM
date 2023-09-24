@@ -8,7 +8,7 @@ type PackageInstallResponse = {
 export default class PackageManager extends CUP {
     manager: "cpm" | "npm" | "yarn";
     private cwd;
-    private cpr;
+    private cpr?;
     private debugMode;
     private rsOptions;
     private watcher;

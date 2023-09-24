@@ -50,7 +50,7 @@ function isValidMetadata( metadata: Metadata ){
 export default class PackageManager extends CUP {
   public manager
   private cwd: string
-  private cpr: {
+  private cpr?: {
     baseURL: string
     accessToken: string
   }
@@ -68,10 +68,12 @@ export default class PackageManager extends CUP {
     super()
 
     // Configure access to package repository
-    const { source, apiversion, token } = options.cpr
-    this.cpr = {
-      baseURL: `${source}/v${apiversion || '1'}`,
-      accessToken: token || ''
+    if( options.cpr ) {
+      const { source, apiversion, token } = options.cpr
+      this.cpr = {
+        baseURL: `${source}/v${apiversion || '1'}`,
+        accessToken: token || ''
+      }
     }
 
     this.manager = options.manager || 'cpm' // Yarn as default node package manager (npm): (Install in packages)
@@ -227,7 +229,7 @@ export default class PackageManager extends CUP {
           && progress( false, null, `Installation directory: ${directory}`)
 
           await fs.ensureDir( directory )
-          await this.unpack(`${this.cpr.baseURL}/package/fetch?dtoken=${dtoken}`, directory, etoken, progress )
+          await this.unpack(`${this.cpr?.baseURL}/package/fetch?dtoken=${dtoken}`, directory, etoken, progress )
         }
 
         /**
@@ -295,10 +297,10 @@ export default class PackageManager extends CUP {
 
       const
       headers = {
-        'Authorization': `Bearer ${this.cpr.accessToken}`,
+        'Authorization': `Bearer ${this.cpr?.accessToken}`,
         'X-User-Agent': 'CPM/1.0'
       },
-      response = await prequest.get({ url: `${this.cpr.baseURL}/resolve/${pkg}`, headers, json: true })
+      response = await prequest.get({ url: `${this.cpr?.baseURL}/resolve/${pkg}`, headers, json: true })
       if( response.error ) throw new Error( response.message )
 
       // Fetch packages
@@ -494,9 +496,9 @@ export default class PackageManager extends CUP {
     uploadPackage = (): Promise<string> => {
       return new Promise( ( resolve, reject ) => {
         const options = {
-          url: `${this.cpr.baseURL}/publish`,
+          url: `${this.cpr?.baseURL}/publish`,
           headers: {
-            'Authorization': `Bearer ${this.cpr.accessToken}`,
+            'Authorization': `Bearer ${this.cpr?.accessToken}`,
             'Content-Type': 'application/octet-stream',
             'X-User-Agent': 'CPM/1.0'
           },
